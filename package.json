@@ -1,0 +1,45 @@
+{
+  "name": "sakuga-down-and-clip-gen",
+  "version": "1.0.0",
+  "description": "Aplicación que descarga videos de Sakugabooru y genera clips automáticamente",
+  "main": "dist/index.js",
+  "bin": {
+    "sakuga-down-and-clip": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "download": "ts-node src/index.ts download",
+    "generate": "ts-node src/index.ts generate-clips",
+    "download-and-clip": "ts-node src/index.ts download-and-clip"
+  },
+  "keywords": [
+    "sakuga",
+    "videos",
+    "clips",
+    "downloader",
+    "ffmpeg",
+    "scenedetect"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@types/express": "^5.0.1",
+    "@types/socket.io": "^3.0.1",
+    "axios": "^1.6.2",
+    "cheerio": "^1.0.0-rc.12",
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.3",
+    "@types/yargs": "^17.0.32",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
