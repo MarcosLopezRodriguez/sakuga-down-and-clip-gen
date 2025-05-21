@@ -177,14 +177,50 @@ export class SakugaDownAndClipGen {
             res.json({ success: true, message: 'Descarga de etiquetas iniciada' });
 
             // Iniciar descargas en background
-            for (const tag of tags) {
-                const tagUrl = `${this.downloader['baseUrl']}/post?tags=${tag}`;
-                await this.downloader.downloadVideosFromTag(tagUrl);
-            }
+            const tagProcessingPromises = tags.map(async (tag) => {
+                const tagUrl = `${this.downloader['baseUrl']}/post?tags=${tag.trim()}`;
+                try {
+                    console.log(`Iniciando procesamiento para etiqueta: ${tag}`);
+                    // The downloadVideosFromTag method itself is now concurrent for videos within that tag.
+                    // Here we are running the processing for different tags concurrently.
+                    await this.downloader.downloadVideosFromTag(tagUrl, this.downloadDirectory);
+                    console.log(`Procesamiento completado para etiqueta: ${tag}`);
+                    // Individual video download events are handled by the Downloader class.
+                    // Tag-level completion is implicitly handled when all its videos are done.
+                    // We could emit a specific event here if needed, e.g., via this.io.emit('tagProcessingFinished', { tag });
+                } catch (tagError: any) {
+                    console.error(`Error procesando la etiqueta ${tag}: ${tagError.message}`);
+                    this.io.emit('downloadError', { 
+                        error: `Error en etiqueta ${tag}: ${tagError.message}`, 
+                        tag 
+                    });
+                }
+            });
 
-            // Las notificaciones se manejarán a través de WebSockets
+            // Usar Promise.allSettled para esperar a que todas las etiquetas se procesen,
+            // independientemente de si algunas fallan.
+            Promise.allSettled(tagProcessingPromises).then(results => {
+                console.log('Procesamiento de todas las etiquetas finalizado.');
+                results.forEach((result, index) => {
+                    const tag = tags[index];
+                    if (result.status === 'rejected') {
+                        console.error(`La etiqueta ${tag} falló:`, result.reason);
+                        // El error específico ya debería haber sido emitido por el catch dentro de map.
+                    } else {
+                        console.log(`La etiqueta ${tag} se procesó exitosamente.`);
+                    }
+                });
+                // Emit a general "all tags processed" event if desired
+                this.io.emit('allTagsProcessingComplete', { 
+                    message: 'Todas las etiquetas solicitadas han sido procesadas.',
+                    results: results.map((r, i) => ({ tag: tags[i], status: r.status }))
+                });
+            });
+
+            // Las notificaciones de progreso y finalización individuales se manejan a través de WebSockets desde Downloader.
         } catch (error: any) {
-            // Si ya se envió la respuesta, notificar el error por WebSocket
+            // Este catch es para errores en la configuración inicial o si res.json falla.
+            console.error('Error general en handlePostDownloadByTags:', error.message);
             if (res.headersSent) {
                 this.io.emit('downloadError', { error: error.message });
             } else {
@@ -298,6 +334,128 @@ export class SakugaDownAndClipGen {
         } catch (error: any) {
             console.error('Error en la generación de clips desde carpeta:', error);
             res.status(500).json({ error: error.message });
+        }
+    }
+
+
+    /**
+     * Helper function to recursively get all video file paths from a directory.
+     * @param directory The directory to scan.
+     * @returns An array of full video file paths.
+     */
+    private _getAllVideoPathsRecursive(directory: string): string[] {
+        const videoPaths: string[] = [];
+        const entries = fs.readdirSync(directory, { withFileTypes: true });
+
+        for (const entry of entries) {
+            const fullPath = path.join(directory, entry.name);
+            if (entry.isDirectory()) {
+                videoPaths.push(...this._getAllVideoPathsRecursive(fullPath));
+            } else if (entry.isFile() && /\.(mp4|webm|mkv)$/i.test(entry.name)) {
+                videoPaths.push(fullPath);
+            }
+        }
+        return videoPaths;
+    }
+
+    private async handlePostGenerateClipsFromFolder(req: express.Request, res: express.Response): Promise<void> {
+        try {
+            const { folderPath, minDuration, maxDuration, threshold } = req.body; // useFFmpeg is implicitly handled by clipGenerator
+            if (!folderPath && folderPath !== "") { // Allow empty string for root download directory
+                res.status(400).json({ error: 'Se requiere la ruta de la carpeta (folderPath)' });
+                return;
+            }
+    
+            const videosDirectory = path.join(this.downloadDirectory, folderPath);
+    
+            if (!fs.existsSync(videosDirectory) || !fs.statSync(videosDirectory).isDirectory()) {
+                res.status(404).json({ error: `La carpeta ${folderPath} no existe o no es un directorio` });
+                return;
+            }
+    
+            // Respond immediately to the client
+            res.json({ success: true, message: `Generación de clips iniciada para la carpeta: ${folderPath || '(raíz)'}` });
+            
+            console.log(`Iniciando generación de clips para la carpeta: ${videosDirectory}`);
+            this.io.emit('clipsGenerationStarted', { folderPath, message: `Iniciando generación de clips para: ${folderPath || '(raíz)'}` });
+
+            const videoFiles = this._getAllVideoPathsRecursive(videosDirectory);
+    
+            if (videoFiles.length === 0) {
+                console.log(`No se encontraron videos en la carpeta: ${videosDirectory}`);
+                this.io.emit('clipsGenerationComplete', { folderPath, results: [], message: `No se encontraron videos en: ${folderPath || '(raíz)'}` });
+                return;
+            }
+    
+            console.log(`Videos encontrados para procesar: ${videoFiles.length}`);
+            this.io.emit('clipsGenerationProgress', { folderPath, message: `Encontrados ${videoFiles.length} videos. Iniciando procesamiento...` });
+            
+            const sceneOptions = {
+                minDuration: minDuration || 1.0,
+                maxDuration: maxDuration || 3.0,
+                threshold: threshold || 30 
+            };
+    
+            const allResults: Array<{ videoPath: string, clipPaths: string[], status: string, reason?: string }> = [];
+            const processingPromises: Promise<void>[] = [];
+            let currentlyActivePromises: Promise<any>[] = [];
+            const concurrencyLimit = this.clipGenerator.getConcurrencyLimit(); // Get limit from ClipGenerator
+
+            for (const videoPath of videoFiles) {
+                const task = async () => {
+                    console.log(`Generando clips para: ${videoPath}`);
+                    this.io.emit('clipsGenerationProgress', { folderPath, videoPath, message: `Procesando: ${path.basename(videoPath)}` });
+                    try {
+                        // detectScenesAndGenerateClips internally uses PySceneDetect with an FFmpeg fallback
+                        const clipPaths = await this.clipGenerator.detectScenesAndGenerateClips(videoPath, sceneOptions);
+                        allResults.push({ videoPath: videoPath.replace(/\\/g, '/'), clipPaths: clipPaths.map(p => p.replace(/\\/g, '/')), status: 'fulfilled' });
+                        this.io.emit('videoClipsGenerated', { folderPath, videoPath, clipPaths, message: `Clips generados para: ${path.basename(videoPath)}` });
+                    } catch (error: any) {
+                        console.error(`Error generando clips para ${videoPath}: ${error.message}`);
+                        allResults.push({ videoPath: videoPath.replace(/\\/g, '/'), clipPaths: [], status: 'rejected', reason: error.message });
+                        this.io.emit('videoClipsFailed', { folderPath, videoPath, error: error.message, message: `Error en: ${path.basename(videoPath)}` });
+                    } finally {
+                        // Remove itself from the list of active promises
+                         currentlyActivePromises = currentlyActivePromises.filter(p => p !== wrappedPromise);
+                    }
+                };
+
+                const wrappedPromise = task(); // Don't await here directly
+                processingPromises.push(wrappedPromise);
+                currentlyActivePromises.push(wrappedPromise);
+
+                if (currentlyActivePromises.length >= concurrencyLimit) {
+                    try {
+                        await Promise.race(currentlyActivePromises);
+                    } catch (raceError) {
+                        // This catch is primarily for Promise.race itself if it throws an error
+                        // (e.g., if an empty array was passed, though our logic prevents this).
+                        // Individual promise rejections are handled by their own .catch or try/catch within the task.
+                        console.debug("Promise.race completed, possibly due to a rejection handled by the task's own catch block.", raceError);
+                    }
+                }
+            }
+    
+            await Promise.allSettled(processingPromises); // Wait for all video processing to complete
+    
+            console.log(`Todos los videos en la carpeta ${folderPath} han sido procesados.`);
+            const finalClips = this.getDirectoryContents(this.clipDirectory); // Refresh clip list
+            this.io.emit('directoriesUpdated', { type: 'clips', contents: finalClips });
+            this.io.emit('clipsGenerationComplete', { 
+                folderPath, 
+                results: allResults, 
+                message: `Generación de clips completada para: ${folderPath || '(raíz)'}. Total videos procesados: ${videoFiles.length}.` 
+            });
+
+        } catch (error: any) { // This outer catch is for setup errors (e.g., folder not found)
+            console.error('Error en la generación de clips desde carpeta (configuración o error general):', error);
+            // If headers not sent, means the initial res.json hasn't been called
+            if (!res.headersSent) {
+                 res.status(500).json({ error: error.message });
+            } else {
+                // If initial response was sent, use WebSocket to report the general error
+                this.io.emit('clipsGenerationError', { folderPath: req.body.folderPath, error: error.message });
+            }
         }
     }
 

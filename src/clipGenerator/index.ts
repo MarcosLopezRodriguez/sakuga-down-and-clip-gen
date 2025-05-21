@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { execSync } from 'child_process';
+import * as os from 'os';
 
 /**
  * Opciones para la detección de escenas
@@ -82,16 +83,23 @@ export class ClipGenerator {
     private outputDirectory: string;
     private ffmpegPath: string;
     private ffprobePath: string;
+    private concurrencyLimit: number;
 
     constructor(
         outputDirectory: string = 'output/clips',
         ffmpegPath?: string,
-        ffprobePath?: string
+        ffprobePath?: string,
+        concurrencyLimit?: number
     ) {
         this.outputDirectory = outputDirectory;
         this.ffmpegPath = ffmpegPath || FFMPEG_PATH;
         this.ffprobePath = ffprobePath || FFPROBE_PATH;
+        
+        // Default concurrency: half of CPU cores, minimum 1, maximum 4 as a sensible default.
+        const defaultConcurrency = Math.max(1, Math.min(4, Math.floor((os.cpus()?.length || 2) / 2)));
+        this.concurrencyLimit = concurrencyLimit === undefined ? defaultConcurrency : Math.max(1, concurrencyLimit);
 
+        console.log(`ClipGenerator initialized with concurrency limit: ${this.concurrencyLimit}`);
         console.log(`Usando FFmpeg en: ${this.ffmpegPath}`);
         console.log(`Usando FFprobe en: ${this.ffprobePath}`);
 
@@ -99,6 +107,13 @@ export class ClipGenerator {
         if (!fs.existsSync(outputDirectory)) {
             fs.mkdirSync(outputDirectory, { recursive: true });
         }
+    }
+
+    /**
+     * Returns the configured concurrency limit.
+     */
+    public getConcurrencyLimit(): number {
+        return this.concurrencyLimit;
     }
 
     /**
@@ -643,28 +658,62 @@ export class ClipGenerator {
         console.log(`Found ${videoFiles.length} video files in directory`);
 
         const allClips: string[] = [];
+        const processingPromises: Promise<string[]>[] = [];
+        let currentlyActivePromises: Promise<any>[] = [];
 
         for (const videoFile of videoFiles) {
             const videoPath = path.join(directoryPath, videoFile);
-            console.log(`Processing video: ${videoPath}`);
 
-            try {
-                // Intenta primero con PySceneDetect
+            const task = async (): Promise<string[]> => {
+                console.log(`Starting processing for video: ${videoPath}`);
                 let clips: string[] = [];
                 try {
+                    // Attempt PySceneDetect first
                     clips = await this.detectScenesAndGenerateClips(videoPath, options);
-                } catch (error) {
-                    // Si falla PySceneDetect, usa el método de FFmpeg como respaldo
-                    clips = await this.detectScenesWithFFmpegAndGenerateClips(videoPath, options);
+                } catch (pyscenesError) {
+                    console.warn(`PySceneDetect failed for ${videoPath}: ${pyscenesError}. Falling back to FFmpeg method.`);
+                    try {
+                        clips = await this.detectScenesWithFFmpegAndGenerateClips(videoPath, options);
+                    } catch (ffmpegFallbackError) {
+                        console.error(`FFmpeg fallback also failed for ${videoPath}: ${ffmpegFallbackError}`);
+                        throw ffmpegFallbackError; // Rethrow to be caught by the outer catch
+                    }
                 }
+                console.log(`Finished processing for video: ${videoPath}, found ${clips.length} clips.`);
+                return clips;
+            };
 
-                allClips.push(...clips);
-                console.log(`Generated ${clips.length} clips from ${videoPath}`);
-            } catch (error) {
-                console.error(`Failed to process video ${videoPath}:`, error);
+            const wrappedPromise = task()
+                .then(clips => {
+                    allClips.push(...clips);
+                    currentlyActivePromises = currentlyActivePromises.filter(p => p !== wrappedPromise);
+                    return clips;
+                })
+                .catch(error => {
+                    console.error(`Failed to process video ${videoPath}:`, error.message);
+                    currentlyActivePromises = currentlyActivePromises.filter(p => p !== wrappedPromise);
+                    return []; // Return empty array for this video in case of error
+                });
+
+            processingPromises.push(wrappedPromise);
+            currentlyActivePromises.push(wrappedPromise);
+
+            if (currentlyActivePromises.length >= this.concurrencyLimit) {
+                try {
+                    await Promise.race(currentlyActivePromises);
+                } catch (raceError) {
+                    // Individual promise rejections are handled in their .catch blocks
+                    // Promise.race itself will throw if a promise in it rejects,
+                    // but we mainly use it to "unblock" and let the loop continue.
+                    console.debug("Promise.race caught an error, this is usually handled by individual promises.", raceError);
+                }
             }
         }
 
+        // Wait for all processing to complete
+        await Promise.allSettled(processingPromises);
+
+        console.log(`Finished processing directory ${directoryPath}. Total clips generated: ${allClips.length}`);
         return allClips;
     }
 
@@ -710,106 +759,127 @@ export class ClipGenerator {
         limpiarNombresArchivos(inputDirectory);
 
         const allClips: string[] = [];
+        const processingPromises: Promise<string[]>[] = [];
+        let currentlyActivePromises: Promise<any>[] = [];
 
-        // Listar todos los archivos y directorios en la carpeta de entrada
-        const elementos = fs.readdirSync(inputDirectory);
+        // Limpiar nombres de archivos
+        this.limpiarNombresArchivosRecursivo(inputDirectory);
+        
+        const videoFilesToProcess: string[] = [];
 
-        // Función para procesar un video (similar a la función Python)
-        const procesarVideo = async (rutaVideo: string): Promise<string[]> => {
-            console.log(`Procesando ${rutaVideo}...`);
-
-            // Detectar escenas usando FFmpeg
-            const escenas = await this.detectScenesFFmpeg(rutaVideo, options);
-
-            // Filtrar y ajustar escenas según duración
-            const escenasFiltradas: [number, number][] = [];
-
-            for (const [inicio, fin] of escenas) {
-                const duracion = fin - inicio;
-
-                if (duracion < minDuration) {
-                    continue;
-                } else if (duracion > maxDuration) {
-                    // Dividir escena en clips de duración máxima
-                    const numClips = Math.floor(duracion / maxDuration);
-                    for (let i = 0; i < numClips; i++) {
-                        const clipInicio = inicio + (i * maxDuration);
-                        const clipFin = clipInicio + maxDuration;
-                        escenasFiltradas.push([clipInicio, clipFin]);
-                    }
-                    // Agregar el resto si es mayor que la duración mínima
-                    const resto = duracion % maxDuration;
-                    if (resto >= minDuration) {
-                        const clipInicio = inicio + (numClips * maxDuration);
-                        escenasFiltradas.push([clipInicio, fin]);
-                    }
-                } else {
-                    escenasFiltradas.push([inicio, fin]);
+        // Función recursiva para encontrar todos los archivos .mp4
+        const findMp4Files = (dir: string) => {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    findMp4Files(fullPath);
+                } else if (entry.isFile() && entry.name.endsWith('.mp4')) {
+                    videoFilesToProcess.push(fullPath);
                 }
             }
+        };
+        findMp4Files(inputDirectory);
 
-            // Crear directorio específico para este video
-            const nombreVideo = path.basename(rutaVideo, path.extname(rutaVideo));
-            const directorioVideo = path.join(this.outputDirectory, nombreVideo);
-            if (!fs.existsSync(directorioVideo)) {
-                fs.mkdirSync(directorioVideo, { recursive: true });
-            }
+        console.log(`Found ${videoFilesToProcess.length} .mp4 files for processing like Python.`);
 
-            // Generar clips para cada escena
-            const clipPaths: string[] = [];
-            for (let i = 0; i < escenasFiltradas.length; i++) {
-                const [inicio, fin] = escenasFiltradas[i];
-                const outputFileName = `${nombreVideo}_scene${i + 1}.mp4`;
-                const outputPath = path.join(directorioVideo, outputFileName);
+        for (const videoPath of videoFilesToProcess) {
+            const task = async (): Promise<string[]> => {
+                console.log(`Procesando (Python-like) ${videoPath}...`);
+                // Detectar escenas usando FFmpeg
+                const escenas = await this.detectScenesFFmpeg(videoPath, options);
+                const escenasFiltradas: [number, number][] = [];
 
+                for (const [inicio, fin] of escenas) {
+                    const duracion = fin - inicio;
+                    if (duracion < minDuration) continue;
+                    if (duracion > maxDuration) {
+                        const numClips = Math.floor(duracion / maxDuration);
+                        for (let i = 0; i < numClips; i++) {
+                            escenasFiltradas.push([inicio + (i * maxDuration), inicio + ((i + 1) * maxDuration)]);
+                        }
+                        const resto = duracion % maxDuration;
+                        if (resto >= minDuration) {
+                            escenasFiltradas.push([inicio + (numClips * maxDuration), fin]);
+                        }
+                    } else {
+                        escenasFiltradas.push([inicio, fin]);
+                    }
+                }
+
+                const nombreVideo = path.basename(videoPath, path.extname(videoPath));
+                const directorioVideo = path.join(this.outputDirectory, nombreVideo);
+                if (!fs.existsSync(directorioVideo)) {
+                    fs.mkdirSync(directorioVideo, { recursive: true });
+                }
+
+                const clipPaths: string[] = [];
+                for (let i = 0; i < escenasFiltradas.length; i++) {
+                    const [inicio, fin] = escenasFiltradas[i];
+                    const outputFileName = `${nombreVideo}_scene${i + 1}.mp4`;
+                    const outputPath = path.join(directorioVideo, outputFileName);
+                    try {
+                        await this.generateClipWithoutAudio(videoPath, inicio, fin, outputPath);
+                        clipPaths.push(outputPath);
+                    } catch (error) {
+                        console.error(`Error generando clip (Python-like) ${outputFileName}:`, error);
+                    }
+                }
+                console.log(`Procesamiento (Python-like) de ${videoPath} completado. Clips: ${clipPaths.length}`);
+                return clipPaths;
+            };
+            
+            const wrappedPromise = task()
+                .then(clips => {
+                    allClips.push(...clips);
+                    currentlyActivePromises = currentlyActivePromises.filter(p => p !== wrappedPromise);
+                    return clips;
+                })
+                .catch(error => {
+                    console.error(`Failed to process video (Python-like) ${videoPath}:`, error.message);
+                    currentlyActivePromises = currentlyActivePromises.filter(p => p !== wrappedPromise);
+                    return []; 
+                });
+
+            processingPromises.push(wrappedPromise);
+            currentlyActivePromises.push(wrappedPromise);
+
+            if (currentlyActivePromises.length >= this.concurrencyLimit) {
                 try {
-                    // Generar clip usando FFmpeg (sin audio como en Python)
-                    await this.generateClipWithoutAudio(rutaVideo, inicio, fin, outputPath);
-                    clipPaths.push(outputPath);
-                } catch (error) {
-                    console.error(`Error generando clip ${outputFileName}:`, error);
+                    await Promise.race(currentlyActivePromises);
+                } catch (raceError) {
+                     console.debug("Promise.race caught an error (Python-like), handled by individual promises.", raceError);
                 }
             }
-
-            console.log(`Procesamiento de ${rutaVideo} completado.`);
-            return clipPaths;
-        };
-
-        // Función para procesar carpeta o archivo (similar a la función Python)
-        const procesarCarpetaOArchivo = async (ruta: string): Promise<string[]> => {
-            const rutaAbs = path.resolve(ruta);
-            const clips: string[] = [];
-
-            if (fs.statSync(rutaAbs).isDirectory()) {
-                console.log(`Procesando carpeta: ${rutaAbs}`);
-                const archivos = fs.readdirSync(rutaAbs);
-                for (const archivo of archivos) {
-                    const rutaArchivo = path.join(rutaAbs, archivo);
-                    if (archivo.endsWith('.mp4')) {
-                        const clipsPaths = await procesarVideo(rutaArchivo);
-                        clips.push(...clipsPaths);
-                    }
-                }
-            } else if (rutaAbs.endsWith('.mp4')) {
-                const clipsPaths = await procesarVideo(rutaAbs);
-                clips.push(...clipsPaths);
-            } else {
-                console.warn(`Elemento no válido: ${rutaAbs}`);
-            }
-
-            return clips;
-        };
-
-        // Procesar todos los elementos en la carpeta de videos
-        for (const elemento of elementos) {
-            const rutaElemento = path.join(inputDirectory, elemento);
-            const clips = await procesarCarpetaOArchivo(rutaElemento);
-            allClips.push(...clips);
         }
 
+        await Promise.allSettled(processingPromises);
+        console.log(`Finished processing (Python-like) all videos. Total clips: ${allClips.length}`);
         return allClips;
     }
 
+    /**
+     * Helper to recursively clean filenames in a directory.
+     */
+    private limpiarNombresArchivosRecursivo(directorio: string): void {
+        const archivos = fs.readdirSync(directorio, { withFileTypes: true });
+        for (const archivo of archivos) {
+            const rutaCompleta = path.join(directorio, archivo.name);
+            const nuevoNombre = archivo.name.replace(/[\\/:*?"<>|()[\]]/g, '');
+            let nuevaRutaCompleta = rutaCompleta;
+
+            if (nuevoNombre !== archivo.name) {
+                nuevaRutaCompleta = path.join(directorio, nuevoNombre);
+                fs.renameSync(rutaCompleta, nuevaRutaCompleta);
+                console.log(`Renombrado: ${archivo.name} -> ${nuevoNombre} en ${directorio}`);
+            }
+
+            if (archivo.isDirectory()) {
+                this.limpiarNombresArchivosRecursivo(nuevaRutaCompleta); // Recurse with the new path if renamed
+            }
+        }
+    }
+    
     /**
      * Genera clips sin audio directamente
      */

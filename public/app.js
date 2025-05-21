@@ -190,7 +190,17 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Procesamiento de etiqueta completado:', data);
         showDownloadStatus(`${data.message}`);
     });
+
+    // Initialize IntersectionObserver for videos
+    const videoObserver = new IntersectionObserver(handleVideoIntersection, {
+        rootMargin: '100px 0px', // Load when 100px away from viewport
+        threshold: 0.01         // Even a small part visible
+    });
 });
+
+// Constants for lazy loading
+const INITIAL_CLIPS_PER_GROUP = 6; // Number of clips to show initially
+const CLIPS_TO_LOAD_PER_CLICK = 6; // Number of clips to load on "Load More"
 
 // Actualizar la caché de videos
 function updateAllVideosCache(videos) {
@@ -471,82 +481,204 @@ function displayGeneratedClips(clips) {
         const clipsRow = document.createElement('div');
         clipsRow.className = 'row mb-3';
         clipsRow.id = `clips-group-${videoName.replace(/[^a-zA-Z0-9]/g, '-')}`;
+        container.appendChild(clipsRow); // Append row first
 
-        videoClips.forEach(clip => {
-            const clipCol = document.createElement('div');
-            clipCol.className = 'col-md-3 mb-4';
-            clipCol.id = `clip-container-${clip.path.replace(/[\/\.]/g, '-')}`;
+        // Store all clips for this group to handle "Load More"
+        clipsRow.dataset.allClips = JSON.stringify(videoClips);
+        clipsRow.dataset.loadedCount = '0';
+        clipsRow.dataset.videoName = videoName; // For context in event handlers
 
-            const clipCard = document.createElement('div');
-            clipCard.className = 'card video-card';
+        loadMoreClipsForGroup(clipsRow); // Load initial batch
 
-            // Video preview (thumbnail)
-            const videoContainer = document.createElement('div');
-            videoContainer.className = 'video-container';
+        // Add "Load More" button if necessary
+        if (videoClips.length > INITIAL_CLIPS_PER_GROUP) {
+            const loadMoreButtonRow = document.createElement('div');
+            loadMoreButtonRow.className = 'row mb-4 text-center';
+            const loadMoreButton = document.createElement('button');
+            loadMoreButton.className = 'btn btn-outline-primary btn-sm load-more-clips';
+            loadMoreButton.textContent = 'Cargar más clips';
+            loadMoreButton.dataset.videoName = videoName; // Link button to its group
+            loadMoreButtonRow.appendChild(loadMoreButton);
+            container.appendChild(loadMoreButtonRow); // Append after the clipsRow
+        }
+    });
 
-            // Create video element
-            const videoElement = document.createElement('video');
-            videoElement.className = 'w-100';
-            videoElement.src = `/clips/${clip.path}`;
-            videoElement.preload = 'metadata';
-            videoElement.muted = true;
-            videoElement.controls = true; // Add controls
-            videoElement.autoplay = true; // Add autoplay
-            videoElement.loop = true;     // Add loop playback
+    // Event delegation for "Load More" buttons
+    container.addEventListener('click', function(event) {
+        if (event.target.classList.contains('load-more-clips')) {
+            const videoName = event.target.dataset.videoName;
+            const groupRow = document.getElementById(`clips-group-${videoName.replace(/[^a-zA-Z0-9]/g, '-')}`);
+            if (groupRow) {
+                loadMoreClipsForGroup(groupRow);
+                // Hide button if all loaded (loadMoreClipsForGroup will handle this)
+                const allClipsForGroup = JSON.parse(groupRow.dataset.allClips || '[]');
+                const loadedCount = parseInt(groupRow.dataset.loadedCount || '0');
+                if (loadedCount >= allClipsForGroup.length) {
+                    event.target.style.display = 'none';
+                }
+            }
+        }
+    });
+}
 
-            // Delete button
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'delete-clip-btn';
-            deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
-            deleteBtn.title = 'Eliminar clip';
-            deleteBtn.setAttribute('data-clip-path', clip.path);
 
-            // Event for delete button - stop propagation
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                deleteClip(clip.path, clipCol.id);
-            });
+function loadMoreClipsForGroup(groupRow) {
+    const allClips = JSON.parse(groupRow.dataset.allClips || '[]');
+    let loadedCount = parseInt(groupRow.dataset.loadedCount || '0');
+    const videoName = groupRow.dataset.videoName;
+    const clipsToLoad = CLIPS_TO_LOAD_PER_CLICK;
 
-            videoContainer.appendChild(videoElement);
-            clipCard.appendChild(videoContainer);
-            clipCard.appendChild(deleteBtn);
-            clipCol.appendChild(clipCard);
-            clipsRow.appendChild(clipCol);
+    const clipsToRender = allClips.slice(loadedCount, loadedCount + clipsToLoad);
 
-            // Card body with clip info
-            const clipCardBody = document.createElement('div');
-            clipCardBody.className = 'card-body';
+    clipsToRender.forEach(clip => {
+        const clipCol = createClipPlaceholderElement(clip, videoName); // This returns the col
+        const clipCard = clipCol.querySelector('.card.video-card'); // Get the card to observe
+        groupRow.appendChild(clipCol);
+        if (clipCard) { // Ensure clipCard exists before observing
+            videoObserver.observe(clipCard);
+        }
+    });
 
-            const clipTitle = document.createElement('h6');
-            clipTitle.className = 'card-title text-truncate';
-            clipTitle.textContent = clip.name;
+    loadedCount += clipsToRender.length;
+    groupRow.dataset.loadedCount = loadedCount.toString();
 
-            const clipInfo = document.createElement('p');
-            clipInfo.className = 'card-text small text-muted';
-            clipInfo.textContent = formatFileSize(clip.size);
+    // Check if "Load More" button for this group should be hidden
+    if (loadedCount >= allClips.length) {
+        const loadMoreButton = document.querySelector(`.load-more-clips[data-video-name="${videoName}"]`);
+        if (loadMoreButton) {
+            loadMoreButton.style.display = 'none';
+        }
+    }
+}
 
-            // Play video when clicking on the card
-            clipCard.addEventListener('click', (e) => {
-                if (e.target !== deleteBtn && !deleteBtn.contains(e.target) && !videoElement.contains(e.target)) {
+
+function createClipPlaceholderElement(clip, videoName) {
+    const clipCol = document.createElement('div');
+    clipCol.className = 'col-md-3 mb-4'; // Bootstrap column
+    clipCol.id = `clip-container-${clip.path.replace(/[\/\.]/g, '-')}`;
+
+    const clipCard = document.createElement('div');
+    clipCard.className = 'card video-card clip-placeholder'; // Add clip-placeholder class
+
+    // Placeholder content
+    const placeholderContent = document.createElement('div');
+    placeholderContent.className = 'clip-placeholder-content'; // Target for IntersectionObserver
+    placeholderContent.style.height = '150px'; // Approximate height of a video player
+    placeholderContent.style.display = 'flex';
+    placeholderContent.style.alignItems = 'center';
+    placeholderContent.style.justifyContent = 'center';
+    placeholderContent.style.border = '1px dashed #ccc';
+    placeholderContent.innerHTML = `<i class="bi bi-film fs-1 text-muted"></i>`;
+
+    // Store data needed to create the video element later
+    placeholderContent.dataset.src = `/clips/${clip.path}`;
+    placeholderContent.dataset.clipName = clip.name;
+    placeholderContent.dataset.clipPath = clip.path; // For delete functionality
+    placeholderContent.dataset.videoName = videoName; // For context
+    placeholderContent.dataset.clipSize = clip.size;
+
+    // Delete button (part of the placeholder card structure)
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'delete-clip-btn';
+    deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+    deleteBtn.title = 'Eliminar clip';
+    deleteBtn.setAttribute('data-clip-path', clip.path); // Used by deleteClip
+    
+    deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent card click event
+        deleteClip(clip.path, clipCol.id);
+    });
+
+    clipCard.appendChild(placeholderContent);
+    clipCard.appendChild(deleteBtn); // Delete button is visible on placeholder
+
+    // Card body for name (visible on placeholder)
+    const clipCardBody = document.createElement('div');
+    clipCardBody.className = 'card-body';
+    const clipTitle = document.createElement('h6');
+    clipTitle.className = 'card-title text-truncate';
+    clipTitle.textContent = clip.name;
+    clipCardBody.appendChild(clipTitle);
+    clipCard.appendChild(clipCardBody);
+    
+    clipCol.appendChild(clipCard);
+    return clipCol;
+}
+
+function handleVideoIntersection(entries, observer) {
+    entries.forEach(entry => {
+        const clipCard = entry.target; // This is now the .card.video-card element
+
+        if (entry.isIntersecting) {
+            // Video is coming into view or is in view
+            if (clipCard.dataset.loaded !== 'true') {
+                // Not loaded yet, so load it
+                const placeholderContent = clipCard.querySelector('.clip-placeholder-content');
+                if (!placeholderContent) return; // Should not happen if not loaded
+
+                const videoSrc = placeholderContent.dataset.src;
+                // const clipName = placeholderContent.dataset.clipName; // Available if needed
+                // const videoName = placeholderContent.dataset.videoName; // Available if needed
+                // const clipSize = placeholderContent.dataset.clipSize; // Available if needed
+
+                const videoContainer = document.createElement('div');
+                videoContainer.className = 'video-container';
+                
+                const videoElement = document.createElement('video');
+                videoElement.className = 'w-100';
+                videoElement.src = videoSrc;
+                videoElement.preload = 'metadata';
+                videoElement.muted = true;
+                videoElement.controls = true;
+                videoElement.autoplay = true; // Autoplay when loaded due to intersection
+                videoElement.loop = true;
+                videoElement.volume = 0.5;
+
+                videoContainer.appendChild(videoElement);
+
+                // Replace placeholder content with video container
+                // The delete button and card body are already part of clipCard, outside placeholderContent
+                clipCard.replaceChild(videoContainer, placeholderContent);
+                clipCard.dataset.loaded = 'true';
+                clipCard.classList.remove('clip-placeholder'); // Visual class indicating placeholder state
+
+                // Add click to play/pause on card (if not on controls or delete button)
+                clipCard.addEventListener('click', (e) => {
+                    const deleteBtn = clipCard.querySelector('.delete-clip-btn');
+                    // Check if the click target is the video element itself or its controls
+                    if (e.target === videoElement || videoElement.contains(e.target)) {
+                        return; // Let video controls handle it
+                    }
+                    if (deleteBtn && (e.target === deleteBtn || deleteBtn.contains(e.target))) {
+                        return; // Let delete button handle it
+                    }
+
+                    // If click is on the card but not on controls or delete button
                     if (videoElement.paused) {
-                        videoElement.play();
+                        videoElement.play().catch(err => console.error("Play error:", err));
                     } else {
                         videoElement.pause();
                     }
+                });
+            } else {
+                // Video was already loaded, potentially play if it was paused by scrolling out
+                // However, autoplay on intersection handles the initial play.
+                // Re-playing automatically if user manually paused might be bad UX.
+                // For now, we'll rely on autoplay on load and manual controls.
+            }
+        } else {
+            // Video is scrolling out of view
+            if (clipCard.dataset.loaded === 'true') {
+                const videoElement = clipCard.querySelector('video');
+                if (videoElement && !videoElement.paused) {
+                    videoElement.pause();
+                    console.log(`Paused video: ${videoElement.src}`);
                 }
-            });
-
-            clipCardBody.appendChild(clipTitle);
-            clipCardBody.appendChild(clipInfo);
-            clipCard.appendChild(clipCardBody);
-
-            // Set video to half volume by default
-            videoElement.volume = 0.5;
-        });
-
-        container.appendChild(clipsRow);
+            }
+        }
     });
 }
+
 
 // Function to delete a clip
 async function deleteClip(clipPath, elementId) {
