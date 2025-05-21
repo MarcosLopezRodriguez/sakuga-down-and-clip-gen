@@ -483,8 +483,8 @@ export class Downloader extends EventEmitter {
 
                 page += 1;
                 if (postUrls.length > 0) { // Only sleep if posts were processed
-                    console.log(`Finished processing page ${page - 1} for tag ${tag}. Waiting ${this.sleep.length}ms before fetching next page...`);
-                    await this.sleep(2000); // Be nice to the server between pages
+                    console.log(`Finished processing page ${page - 1} for tag ${tag}. Waiting ${Downloader.SLEEP_DURATION}ms before fetching next page...`);
+                    await this.sleep(Downloader.SLEEP_DURATION); // Be nice to the server between pages
                 }
             }
             
