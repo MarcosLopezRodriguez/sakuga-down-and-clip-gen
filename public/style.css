@@ -32,10 +32,12 @@ footer {
 
 /* Video cards */
 .video-card {
-    margin-bottom: 1rem;
+    margin-bottom: 1.5rem; /* Increased margin */
     transition: all 0.3s ease;
     cursor: pointer;
     position: relative;
+    border: 1px solid #ddd; /* Subtle border */
+    border-radius: 0.25rem; /* Optional: rounded corners */
 }
 
 .video-card:hover {
@@ -54,19 +56,40 @@ footer {
     min-height: 200px;
 }
 
-/* Video containers */
-.video-container {
+/* Clip specific styling */
+#generatedClips .video-card {
+    /* Using flexbox for the card itself to help with content alignment if needed */
+    display: flex;
+    flex-direction: column;
+}
+
+#generatedClips .video-container {
     position: relative;
     width: 100%;
     overflow: hidden;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    border-radius: 5px;
-    margin-bottom: 1rem;
+    /* box-shadow: 0 4px 8px rgba(0,0,0,0.1); */ /* Shadow moved to .video-card */
+    border-radius: 0.25rem 0.25rem 0 0; /* Rounded corners for top of video */
+    margin-bottom: 0; /* Removed bottom margin as card body will handle spacing */
 }
 
-.video-container video {
+#generatedClips .video-container video {
     width: 100%;
+    height: auto; /* Ensure aspect ratio is maintained */
+    display: block; /* Remove extra space below video */
 }
+
+/* Ensure #generatedClips .row is used for layout */
+#generatedClips .row {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+/* Individual clip column styling for grid */
+#generatedClips .col-md-3 { /* This will create 4 cards per row on medium devices and up */
+    display: flex; /* Make columns flex containers */
+    flex-direction: column; /* Align items vertically */
+}
+
 
 .video-overlay {
     position: absolute;
@@ -82,32 +105,36 @@ footer {
     transition: opacity 0.3s;
 }
 
-.video-container:hover .video-overlay {
-    opacity: 1;
-}
+/* .video-container:hover .video-overlay removed as direct video interaction is preferred */
 
 /* Estilos para el botón de eliminar clip */
 .delete-clip-btn {
     position: absolute;
-    top: 5px;
-    right: 5px;
+    top: 8px; /* Adjusted position */
+    right: 8px; /* Adjusted position */
     z-index: 10;
-    background-color: rgba(220, 53, 69, 0.8);
+    background-color: rgba(220, 53, 69, 0.9); /* Slightly more opaque */
     color: white;
     border: none;
     border-radius: 50%;
-    width: 30px;
-    height: 30px;
+    width: 35px; /* Slightly larger */
+    height: 35px; /* Slightly larger */
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 0.7;
-    transition: opacity 0.3s, transform 0.2s;
+    font-size: 1rem; /* Ensure icon is a good size */
+    opacity: 0.8; /* Default opacity */
+    transition: opacity 0.3s, transform 0.2s, background-color 0.3s;
+}
+
+.video-card:hover .delete-clip-btn { /* Show button on card hover */
+    opacity: 1;
 }
 
 .delete-clip-btn:hover {
     opacity: 1;
     transform: scale(1.1);
+    background-color: rgba(220, 53, 69, 1); /* Darken on hover */
 }
 
 .folder-item {

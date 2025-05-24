@@ -490,9 +490,18 @@ function displayGeneratedClips(clips) {
             videoElement.src = `/clips/${clip.path}`;
             videoElement.preload = 'metadata';
             videoElement.muted = true;
-            videoElement.controls = true; // Add controls
+            // videoElement.controls = true; // Add controls - REMOVED
             videoElement.autoplay = true; // Add autoplay
             videoElement.loop = true;     // Add loop playback
+
+            // Event listener for video click to toggle play/pause
+            videoElement.addEventListener('click', () => {
+                if (videoElement.paused) {
+                    videoElement.play();
+                } else {
+                    videoElement.pause();
+                }
+            });
 
             // Delete button
             const deleteBtn = document.createElement('button');
@@ -547,6 +556,8 @@ function displayGeneratedClips(clips) {
         container.appendChild(clipsRow);
     });
 }
+
+
 
 // Function to delete a clip
 async function deleteClip(clipPath, elementId) {
