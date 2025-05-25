@@ -32,12 +32,15 @@ footer {
 
 /* Video cards */
 .video-card {
-    margin-bottom: 1.5rem; /* Increased margin */
+    margin-bottom: 1.5rem;
+    /* Increased margin */
     transition: all 0.3s ease;
     cursor: pointer;
     position: relative;
-    border: 1px solid #ddd; /* Subtle border */
-    border-radius: 0.25rem; /* Optional: rounded corners */
+    border: 1px solid #ddd;
+    /* Subtle border */
+    border-radius: 0.25rem;
+    /* Optional: rounded corners */
 }
 
 .video-card:hover {
@@ -67,15 +70,20 @@ footer {
     position: relative;
     width: 100%;
     overflow: hidden;
-    /* box-shadow: 0 4px 8px rgba(0,0,0,0.1); */ /* Shadow moved to .video-card */
-    border-radius: 0.25rem 0.25rem 0 0; /* Rounded corners for top of video */
-    margin-bottom: 0; /* Removed bottom margin as card body will handle spacing */
+    /* box-shadow: 0 4px 8px rgba(0,0,0,0.1); */
+    /* Shadow moved to .video-card */
+    border-radius: 0.25rem 0.25rem 0 0;
+    /* Rounded corners for top of video */
+    margin-bottom: 0;
+    /* Removed bottom margin as card body will handle spacing */
 }
 
 #generatedClips .video-container video {
     width: 100%;
-    height: auto; /* Ensure aspect ratio is maintained */
-    display: block; /* Remove extra space below video */
+    height: auto;
+    /* Ensure aspect ratio is maintained */
+    display: block;
+    /* Remove extra space below video */
 }
 
 /* Ensure #generatedClips .row is used for layout */
@@ -85,9 +93,12 @@ footer {
 }
 
 /* Individual clip column styling for grid */
-#generatedClips .col-md-3 { /* This will create 4 cards per row on medium devices and up */
-    display: flex; /* Make columns flex containers */
-    flex-direction: column; /* Align items vertically */
+#generatedClips .col-md-3 {
+    /* This will create 4 cards per row on medium devices and up */
+    display: flex;
+    /* Make columns flex containers */
+    flex-direction: column;
+    /* Align items vertically */
 }
 
 
@@ -110,34 +121,162 @@ footer {
 /* Estilos para el botón de eliminar clip */
 .delete-clip-btn {
     position: absolute;
-    top: 8px; /* Adjusted position */
-    right: 8px; /* Adjusted position */
+    top: 8px;
+    /* Adjusted position */
+    right: 8px;
+    /* Adjusted position */
     z-index: 10;
-    background-color: rgba(220, 53, 69, 0.9); /* Slightly more opaque */
+    background-color: rgba(220, 53, 69, 0.9);
+    /* Slightly more opaque */
     color: white;
     border: none;
     border-radius: 50%;
-    width: 35px; /* Slightly larger */
-    height: 35px; /* Slightly larger */
+    width: 35px;
+    /* Slightly larger */
+    height: 35px;
+    /* Slightly larger */
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1rem; /* Ensure icon is a good size */
-    opacity: 0.8; /* Default opacity */
+    font-size: 1rem;
+    /* Ensure icon is a good size */
+    opacity: 0.8;
+    /* Default opacity */
     transition: opacity 0.3s, transform 0.2s, background-color 0.3s;
 }
 
-.video-card:hover .delete-clip-btn { /* Show button on card hover */
+.video-card:hover .delete-clip-btn {
+    /* Show button on card hover */
     opacity: 1;
 }
 
 .delete-clip-btn:hover {
     opacity: 1;
     transform: scale(1.1);
-    background-color: rgba(220, 53, 69, 1); /* Darken on hover */
+    background-color: rgba(220, 53, 69, 1);
+    /* Darken on hover */
 }
 
 .folder-item {
     border-left: 4px solid #0d6efd;
     background-color: rgba(13, 110, 253, 0.05);
+}
+
+/* Pagination styles */
+.video-section {
+    border: 1px solid #e0e0e0;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    background-color: #ffffff;
+    margin-bottom: 2rem;
+    transition: opacity 0.3s ease, transform 0.2s ease;
+}
+
+.video-section:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.pagination-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.pagination-container.top {
+    margin-top: 1rem;
+}
+
+.pagination-container.bottom {
+    margin-top: 1.5rem;
+    border-top: 1px solid #e0e0e0;
+    padding-top: 1rem;
+}
+
+/* Custom pagination styling */
+.pagination-sm .page-link {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+    border-radius: 0.25rem;
+    margin: 0 2px;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.pagination-sm .page-link::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+    transition: left 0.5s;
+}
+
+.pagination-sm .page-link:hover::before {
+    left: 100%;
+}
+
+.pagination-sm .page-item.active .page-link {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    font-weight: 600;
+}
+
+.pagination-sm .page-link:hover {
+    background-color: #e9ecef;
+    border-color: #dee2e6;
+    transform: translateY(-1px);
+}
+
+.pagination-sm .page-item.disabled .page-link {
+    background-color: transparent;
+    border-color: transparent;
+    color: #6c757d;
+}
+
+/* Video section header improvements */
+.video-section h5 {
+    color: #495057;
+    font-weight: 600;
+}
+
+.video-section .badge {
+    font-size: 0.75rem;
+    margin-left: 0.5rem;
+}
+
+.pagination-info {
+    font-style: italic;
+    color: #6c757d;
+}
+
+/* Loading and performance improvements */
+.video-container.loading {
+    background-color: #f8f9fa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 160px;
+}
+
+.video-container.loading::before {
+    content: "⏳";
+    font-size: 2rem;
+    opacity: 0.7;
+}
+
+/* Smooth transitions for video loading */
+#generatedClips .video-container video {
+    transition: opacity 0.3s ease;
+}
+
+#generatedClips .video-container video[preload="none"] {
+    opacity: 0.7;
+}
+
+#generatedClips .video-container video[preload="metadata"] {
+    opacity: 1;
 }

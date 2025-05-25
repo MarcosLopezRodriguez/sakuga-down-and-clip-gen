@@ -174,6 +174,27 @@
                             </div>
                         </div>
                         <div class="tab-pane fade" id="clipsTab">
+                            <!-- Pagination controls -->
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div>
+                                    <small class="text-muted">Clips por página:</small>
+                                    <select id="clipsPerPageSelect"
+                                        class="form-select form-select-sm d-inline-block ms-2" style="width: auto;">
+                                        <option value="8">8 clips</option>
+                                        <option value="12" selected>12 clips</option>
+                                        <option value="16">16 clips</option>
+                                        <option value="24">24 clips</option>
+                                        <option value="48">48 clips</option>
+                                    </select>
+                                    <small class="text-muted ms-3"
+                                        title="Usa Ctrl+← y Ctrl+→ para navegar entre páginas">
+                                        <i class="bi bi-info-circle"></i> Atajos: Ctrl+← / Ctrl+→
+                                    </small>
+                                </div>
+                                <button id="refreshClipsBtn" class="btn btn-outline-secondary btn-sm">
+                                    <i class="bi bi-arrow-clockwise"></i> Actualizar
+                                </button>
+                            </div>
                             <div id="generatedClips" class="browser-content row"></div>
                             <div id="noClipsMessage" class="text-center p-5">
                                 <i class="bi bi-film fs-1"></i>

@@ -68,13 +68,56 @@ document.addEventListener('DOMContentLoaded', () => {
         // Eliminado el checkbox useFFmpeg, siempre usamos PySceneDetect con fallback a FFmpeg
 
         await generateClipsFromFolder(folderPath, minDuration, maxDuration, threshold);
-    });
-
-    // Handle browser tab switching to refresh content
+    });    // Handle browser tab switching to refresh content
     document.querySelectorAll('#browserTabs .nav-link').forEach(tab => {
         tab.addEventListener('shown.bs.tab', () => {
             loadVideoLists();
         });
+    });
+
+    // Clips per page selector
+    document.getElementById('clipsPerPageSelect').addEventListener('change', (e) => {
+        CLIPS_PER_PAGE = parseInt(e.target.value);
+        localStorage.setItem('clipsPerPage', CLIPS_PER_PAGE);
+
+        // Reset all pagination states when changing clips per page
+        videoPaginationState.clear();
+
+        // Refresh clips display
+        loadVideoLists();
+    });
+
+    // Refresh clips button
+    document.getElementById('refreshClipsBtn').addEventListener('click', () => {
+        loadVideoLists();
+    });
+
+    // Keyboard shortcuts for pagination
+    document.addEventListener('keydown', (e) => {
+        // Only handle shortcuts when clips tab is active
+        const clipsTab = document.getElementById('clipsTab');
+        if (!clipsTab.classList.contains('active')) return;
+
+        // Get the first video section for keyboard navigation
+        const firstVideoSection = document.querySelector('.video-section');
+        if (!firstVideoSection) return;
+
+        const videoName = firstVideoSection.id.replace('video-section-', '').replace(/-/g, ' ');
+        const currentState = videoPaginationState.get(videoName);
+        if (!currentState) return;
+
+        const currentPage = currentState.currentPage;
+
+        // Handle arrow keys for pagination
+        if (e.ctrlKey) {
+            if (e.key === 'ArrowLeft' && currentPage > 1) {
+                e.preventDefault();
+                changeVideoPage(videoName, currentPage - 1);
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                changeVideoPage(videoName, currentPage + 1);
+            }
+        }
     });
 
     // Setup video modal
@@ -432,7 +475,13 @@ function displayDownloadedVideos(videos) {
     });
 }
 
-// Display generated clips in the browser section
+// Configuration for pagination
+let CLIPS_PER_PAGE = parseInt(localStorage.getItem('clipsPerPage')) || 12; // Number of clips to show per page for each video
+
+// Store pagination state for each video
+let videoPaginationState = new Map();
+
+// Display generated clips in the browser section with pagination
 function displayGeneratedClips(clips) {
     const container = document.getElementById('generatedClips');
     const noClipsMessage = document.getElementById('noClipsMessage');
@@ -461,99 +510,275 @@ function displayGeneratedClips(clips) {
 
     // Process each group of clips
     clipsMap.forEach((videoClips, videoName) => {
-        // Add header for this video's clips
+        // Initialize pagination state for this video if not exists
+        if (!videoPaginationState.has(videoName)) {
+            videoPaginationState.set(videoName, { currentPage: 1 });
+        }
+
+        let currentPage = videoPaginationState.get(videoName).currentPage;
+        const totalPages = Math.ceil(videoClips.length / CLIPS_PER_PAGE);
+
+        // Adjust current page if it's now invalid (happens when deleting clips)
+        if (currentPage > totalPages && totalPages > 0) {
+            currentPage = totalPages;
+            videoPaginationState.set(videoName, { currentPage: currentPage });
+        }
+
+        const startIndex = (currentPage - 1) * CLIPS_PER_PAGE;
+        const endIndex = startIndex + CLIPS_PER_PAGE;
+        const currentClips = videoClips.slice(startIndex, endIndex);
+
+        // Create video section container
+        const videoSection = document.createElement('div');
+        videoSection.className = 'video-section mb-4';
+        videoSection.id = `video-section-${videoName.replace(/[^a-zA-Z0-9]/g, '-')}`;
+
+        // Add header for this video's clips with clip count
         const headerRow = document.createElement('div');
         headerRow.className = 'row mb-2 mt-4';
-        headerRow.innerHTML = `<div class="col-12"><h5>${videoName}</h5></div>`;
-        container.appendChild(headerRow);
+        headerRow.innerHTML = `
+            <div class="col-12 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">${videoName} <span class="badge bg-secondary">${videoClips.length} clips</span></h5>
+                <div class="pagination-info">
+                    <small class="text-muted">Página ${currentPage} de ${totalPages}</small>
+                </div>
+            </div>
+        `;
+        videoSection.appendChild(headerRow);
+
+        // Create pagination controls if needed
+        if (totalPages > 1) {
+            const paginationTop = createPaginationControls(videoName, currentPage, totalPages, 'top');
+            videoSection.appendChild(paginationTop);
+        }
 
         // Create a row for this video's clips
         const clipsRow = document.createElement('div');
         clipsRow.className = 'row mb-3';
         clipsRow.id = `clips-group-${videoName.replace(/[^a-zA-Z0-9]/g, '-')}`;
 
-        videoClips.forEach(clip => {
-            const clipCol = document.createElement('div');
-            clipCol.className = 'col-md-3 mb-4';
-            clipCol.id = `clip-container-${clip.path.replace(/[\/\.]/g, '-')}`;
-
-            const clipCard = document.createElement('div');
-            clipCard.className = 'card video-card';
-
-            // Video preview (thumbnail)
-            const videoContainer = document.createElement('div');
-            videoContainer.className = 'video-container';
-
-            // Create video element
-            const videoElement = document.createElement('video');
-            videoElement.className = 'w-100';
-            videoElement.src = `/clips/${clip.path}`;
-            videoElement.preload = 'metadata';
-            videoElement.muted = true;
-            // videoElement.controls = true; // Add controls - REMOVED
-            videoElement.autoplay = true; // Add autoplay
-            videoElement.loop = true;     // Add loop playback
-
-            // Event listener for video click to toggle play/pause
-            videoElement.addEventListener('click', () => {
-                if (videoElement.paused) {
-                    videoElement.play();
-                } else {
-                    videoElement.pause();
-                }
-            });
-
-            // Delete button
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'delete-clip-btn';
-            deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
-            deleteBtn.title = 'Eliminar clip';
-            deleteBtn.setAttribute('data-clip-path', clip.path);
-
-            // Event for delete button - stop propagation
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                deleteClip(clip.path, clipCol.id);
-            });
-
-            videoContainer.appendChild(videoElement);
-            clipCard.appendChild(videoContainer);
-            clipCard.appendChild(deleteBtn);
-            clipCol.appendChild(clipCard);
+        // Only render current page clips
+        currentClips.forEach((clip, index) => {
+            const clipCol = createClipElement(clip, startIndex + index);
             clipsRow.appendChild(clipCol);
-
-            // Card body with clip info
-            const clipCardBody = document.createElement('div');
-            clipCardBody.className = 'card-body';
-
-            const clipTitle = document.createElement('h6');
-            clipTitle.className = 'card-title text-truncate';
-            clipTitle.textContent = clip.name;
-
-            const clipInfo = document.createElement('p');
-            clipInfo.className = 'card-text small text-muted';
-            clipInfo.textContent = formatFileSize(clip.size);
-
-            // Play video when clicking on the card
-            clipCard.addEventListener('click', (e) => {
-                if (e.target !== deleteBtn && !deleteBtn.contains(e.target) && !videoElement.contains(e.target)) {
-                    if (videoElement.paused) {
-                        videoElement.play();
-                    } else {
-                        videoElement.pause();
-                    }
-                }
-            });
-
-            clipCardBody.appendChild(clipTitle);
-            clipCardBody.appendChild(clipInfo);
-            clipCard.appendChild(clipCardBody);
-
-            // Set video to half volume by default
-            videoElement.volume = 0.5;
         });
 
-        container.appendChild(clipsRow);
+        videoSection.appendChild(clipsRow);
+
+        // Add bottom pagination controls if needed
+        if (totalPages > 1) {
+            const paginationBottom = createPaginationControls(videoName, currentPage, totalPages, 'bottom');
+            videoSection.appendChild(paginationBottom);
+        }
+
+        container.appendChild(videoSection);
+    });
+}
+
+// Create a clip element (extracted for reusability)
+function createClipElement(clip, globalIndex) {
+    const clipCol = document.createElement('div');
+    clipCol.className = 'col-md-3 mb-4';
+    clipCol.id = `clip-container-${clip.path.replace(/[\/\.]/g, '-')}`;
+
+    const clipCard = document.createElement('div');
+    clipCard.className = 'card video-card';
+
+    // Video preview (thumbnail)
+    const videoContainer = document.createElement('div');
+    videoContainer.className = 'video-container';
+
+    // Create video element with lazy loading
+    const videoElement = document.createElement('video');
+    videoElement.className = 'w-100';
+    videoElement.src = `/clips/${clip.path}`;
+    videoElement.preload = 'none'; // Changed to 'none' for better performance
+    videoElement.muted = true;
+    videoElement.loop = true;
+
+    // Lazy loading: only start loading when video comes into view
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                videoElement.preload = 'metadata';
+                observer.unobserve(videoElement);
+            }
+        });
+    });
+    observer.observe(videoElement);
+
+    // Event listener for video click to toggle play/pause
+    videoElement.addEventListener('click', () => {
+        if (videoElement.paused) {
+            videoElement.play();
+        } else {
+            videoElement.pause();
+        }
+    });
+
+    // Delete button
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'delete-clip-btn';
+    deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+    deleteBtn.title = 'Eliminar clip';
+    deleteBtn.setAttribute('data-clip-path', clip.path);
+
+    // Event for delete button - stop propagation
+    deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteClip(clip.path, clipCol.id);
+    });
+
+    videoContainer.appendChild(videoElement);
+    clipCard.appendChild(videoContainer);
+    clipCard.appendChild(deleteBtn);
+
+    // Card body with clip info
+    const clipCardBody = document.createElement('div');
+    clipCardBody.className = 'card-body';
+
+    const clipTitle = document.createElement('h6');
+    clipTitle.className = 'card-title text-truncate';
+    clipTitle.textContent = clip.name;
+
+    const clipInfo = document.createElement('p');
+    clipInfo.className = 'card-text small text-muted';
+    clipInfo.textContent = formatFileSize(clip.size);
+
+    // Play video when clicking on the card
+    clipCard.addEventListener('click', (e) => {
+        if (e.target !== deleteBtn && !deleteBtn.contains(e.target) && !videoElement.contains(e.target)) {
+            if (videoElement.paused) {
+                videoElement.play();
+            } else {
+                videoElement.pause();
+            }
+        }
+    });
+
+    clipCardBody.appendChild(clipTitle);
+    clipCardBody.appendChild(clipInfo);
+    clipCard.appendChild(clipCardBody);
+    clipCol.appendChild(clipCard);
+
+    // Set video to half volume by default
+    videoElement.volume = 0.5;
+
+    return clipCol;
+}
+
+// Create pagination controls
+function createPaginationControls(videoName, currentPage, totalPages, position) {
+    const paginationContainer = document.createElement('div');
+    paginationContainer.className = `pagination-container mb-3 ${position}`;
+
+    const pagination = document.createElement('nav');
+    pagination.innerHTML = `
+        <ul class="pagination pagination-sm justify-content-center">
+            <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+                <a class="page-link" href="#" data-video="${videoName}" data-page="${currentPage - 1}">
+                    <i class="bi bi-chevron-left"></i>
+                </a>
+            </li>
+            ${generatePageNumbers(videoName, currentPage, totalPages)}
+            <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+                <a class="page-link" href="#" data-video="${videoName}" data-page="${currentPage + 1}">
+                    <i class="bi bi-chevron-right"></i>
+                </a>
+            </li>
+        </ul>
+    `;
+
+    // Add event listeners to pagination links
+    pagination.querySelectorAll('.page-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const video = link.dataset.video;
+            const page = parseInt(link.dataset.page);
+
+            if (video && page && !link.parentElement.classList.contains('disabled')) {
+                changeVideoPage(video, page);
+            }
+        });
+    });
+
+    paginationContainer.appendChild(pagination);
+    return paginationContainer;
+}
+
+// Generate page numbers for pagination
+function generatePageNumbers(videoName, currentPage, totalPages) {
+    let pages = '';
+
+    // Show page numbers with ellipsis logic
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, currentPage + 2);
+
+    // Adjust range if we're near the beginning or end
+    if (currentPage <= 3) {
+        endPage = Math.min(5, totalPages);
+    }
+    if (currentPage > totalPages - 3) {
+        startPage = Math.max(totalPages - 4, 1);
+    }
+
+    // Add first page and ellipsis if needed
+    if (startPage > 1) {
+        pages += `<li class="page-item">
+            <a class="page-link" href="#" data-video="${videoName}" data-page="1">1</a>
+        </li>`;
+        if (startPage > 2) {
+            pages += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+    }
+
+    // Add page numbers
+    for (let i = startPage; i <= endPage; i++) {
+        pages += `<li class="page-item ${i === currentPage ? 'active' : ''}">
+            <a class="page-link" href="#" data-video="${videoName}" data-page="${i}">${i}</a>
+        </li>`;
+    }
+
+    // Add last page and ellipsis if needed
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            pages += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+        pages += `<li class="page-item">
+            <a class="page-link" href="#" data-video="${videoName}" data-page="${totalPages}">${totalPages}</a>
+        </li>`;
+    }
+
+    return pages;
+}
+
+// Change page for a specific video
+function changeVideoPage(videoName, newPage) {
+    // Show loading indicator
+    const videoSection = document.getElementById(`video-section-${videoName.replace(/[^a-zA-Z0-9]/g, '-')}`);
+    if (videoSection) {
+        videoSection.style.opacity = '0.7';
+        videoSection.style.pointerEvents = 'none';
+    }
+
+    // Update pagination state
+    videoPaginationState.set(videoName, { currentPage: newPage });
+
+    // Refresh the display - only reload clips data
+    loadVideoLists().then(() => {
+        // Restore video section
+        if (videoSection) {
+            videoSection.style.opacity = '1';
+            videoSection.style.pointerEvents = 'auto';
+        }
+
+        // Scroll to the video section
+        setTimeout(() => {
+            const newVideoSection = document.getElementById(`video-section-${videoName.replace(/[^a-zA-Z0-9]/g, '-')}`);
+            if (newVideoSection) {
+                newVideoSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }, 100);
     });
 }
 
@@ -576,37 +801,37 @@ async function deleteClip(clipPath, elementId) {
             throw new Error(data.error || 'Error al eliminar el clip');
         }
 
-        // Remove clip from DOM if successful
-        const clipElement = document.getElementById(elementId);
-        if (clipElement) {
-            // Animate removal
-            clipElement.style.transition = 'all 0.3s';
-            clipElement.style.opacity = '0';
-            clipElement.style.transform = 'scale(0.8)';
+        // Show success feedback
+        console.log(`Clip eliminado: ${clipPath}`);
 
-            setTimeout(() => {
-                clipElement.remove();
+        // Extract video name from clip path for pagination management
+        const pathParts = clipPath.split('/');
+        const videoName = pathParts.length > 1 ? pathParts[0] : 'other';
 
-                // Check if parent row is now empty
-                const parentRow = document.querySelector(`#clips-group-${clipPath.split('/')[0].replace(/[^a-zA-Z0-9]/g, '-')}`);
-                if (parentRow && parentRow.querySelectorAll('.col-md-3').length === 0) {
-                    // Remove video header too
-                    const header = parentRow.previousElementSibling;
-                    if (header && header.classList.contains('mb-2')) {
-                        header.remove();
-                    }
-                    parentRow.remove();
-                }
+        // Get current pagination state for this video
+        const currentState = videoPaginationState.get(videoName);
 
-                // If no more clips, show "no clips" message
-                if (document.querySelectorAll('#generatedClips .col-md-3').length === 0) {
-                    document.getElementById('noClipsMessage').style.display = 'block';
-                }
+        // Refresh the video lists to get updated clip count
+        await loadVideoLists();
 
-            }, 300);
+        // If we had pagination state, try to maintain the current page or adjust if needed
+        if (currentState) {
+            // The loadVideoLists() call will handle pagination automatically
+            // If the current page becomes empty, it will adjust to the previous page
         }
 
-        console.log(`Clip eliminado: ${clipPath}`);
+        // Show temporary success message
+        const statusEl = document.getElementById('generationStatus');
+        if (statusEl) {
+            const originalText = statusEl.textContent;
+            statusEl.textContent = 'Clip eliminado exitosamente';
+            statusEl.style.color = '#28a745';
+
+            setTimeout(() => {
+                statusEl.textContent = originalText;
+                statusEl.style.color = '';
+            }, 2000);
+        }
 
     } catch (error) {
         console.error('Error al eliminar clip:', error);
