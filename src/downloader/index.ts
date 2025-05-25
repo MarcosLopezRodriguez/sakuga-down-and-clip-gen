@@ -32,8 +32,94 @@ export class Downloader extends EventEmitter {
 
     private getTagFromUrl(url: string): string {
         const parsed = urlParse(url, true);
-        const tags = parsed.query.tags as string || 'unknown';
-        return tags.replace(/\s+/g, '_');
+        const tags = decodeURIComponent(parsed.query.tags as string || 'unknown');
+        return this.sanitizeDirectoryName(tags.replace(/\s+/g, '_'));
+    }
+
+    private sanitizeDirectoryName(name: string): string {
+        // Caracteres inválidos en Windows: < > : " | ? * \ /
+        // También sanitizamos algunos otros caracteres problemáticos
+        return name
+            .replace(/[<>:"|?*\\\/]/g, '_')  // Reemplazar caracteres inválidos con underscore
+            .replace(/[^\w\-_.]/g, '_')      // Reemplazar cualquier otro carácter no alfanumérico
+            .replace(/_{2,}/g, '_')          // Reemplazar múltiples underscores consecutivos con uno solo
+            .replace(/^_+|_+$/g, '')         // Remover underscores al inicio y final
+            .substring(0, 100);              // Limitar longitud (Windows tiene límite de 260 caracteres para rutas completas)
+    }
+
+    private validateDirectoryName(name: string): boolean {
+        // Verificar que el nombre no esté vacío y no contenga caracteres inválidos
+        if (!name || name.trim() === '') {
+            return false;
+        }
+
+        // Verificar caracteres inválidos de Windows
+        const invalidChars = /[<>:"|?*\\\/]/;
+        return !invalidChars.test(name);
+    }
+
+    private createDirectorySafely(dirPath: string): void {
+        try {
+            console.log(`Creating directory: ${dirPath}`);
+
+            // Verificar que el directorio padre existe
+            const parentDir = path.dirname(dirPath);
+            if (!fs.existsSync(parentDir)) {
+                console.log(`Creating parent directory: ${parentDir}`);
+                fs.mkdirSync(parentDir, { recursive: true });
+            }
+
+            // Crear el directorio si no existe
+            if (!fs.existsSync(dirPath)) {
+                fs.mkdirSync(dirPath, { recursive: true });
+                console.log(`Directory created successfully: ${dirPath}`);
+            } else {
+                console.log(`Directory already exists: ${dirPath}`);
+            }
+        } catch (error: any) {
+            console.error(`Error creating directory ${dirPath}:`, error);
+
+            // Intentar con un nombre alternativo si el original falla
+            const safeDirName = this.sanitizeDirectoryName(path.basename(dirPath));
+            const fallbackPath = path.join(path.dirname(dirPath), safeDirName);
+
+            if (fallbackPath !== dirPath) {
+                console.log(`Attempting fallback directory: ${fallbackPath}`);
+                try {
+                    if (!fs.existsSync(fallbackPath)) {
+                        fs.mkdirSync(fallbackPath, { recursive: true });
+                        console.log(`Fallback directory created: ${fallbackPath}`);
+                    }
+                    return;
+                } catch (fallbackError) {
+                    console.error(`Fallback directory creation also failed:`, fallbackError);
+                }
+            }
+
+            throw new Error(`Failed to create directory: ${dirPath}. ${error.message}`);
+        }
+    }
+
+    private validatePath(filePath: string): boolean {
+        try {
+            // Verificar que la ruta no exceda los límites de Windows
+            if (filePath.length > 260) {
+                console.warn(`Path too long (${filePath.length} chars): ${filePath}`);
+                return false;
+            }
+
+            // Verificar que no contenga caracteres inválidos
+            const invalidChars = /[<>:"|?*]/;
+            if (invalidChars.test(filePath)) {
+                console.warn(`Invalid characters in path: ${filePath}`);
+                return false;
+            }
+
+            return true;
+        } catch (error) {
+            console.error(`Error validating path: ${filePath}`, error);
+            return false;
+        }
     }
 
     private validateUrl(url: string): boolean {
@@ -189,7 +275,8 @@ export class Downloader extends EventEmitter {
                         videoUrl = fetchedVideoUrl;
                     } else {
                         // Es un post específico
-                        tag = 'post_' + url.split('/post/show/')[1]?.split('/')[0] || 'unknown';
+                        const postId = url.split('/post/show/')[1]?.split('/')[0] || 'unknown';
+                        tag = this.sanitizeDirectoryName(`post_${postId}`);
 
                         // Emitir evento de inicio de descarga
                         this.emit('downloadStarted', { url, tag, status: 'starting', message: `Iniciando descarga para post: ${tag}` });
@@ -206,17 +293,14 @@ export class Downloader extends EventEmitter {
             } else {
                 // URL directa de video, intentar extraer un nombre del dominio
                 const urlObj = new URL(url);
-                tag = urlObj.hostname.replace(/^www\./, '').split('.')[0] || 'video';
+                const hostname = urlObj.hostname.replace(/^www\./, '').split('.')[0] || 'video';
+                tag = this.sanitizeDirectoryName(hostname);
 
                 // Emitir evento de inicio de descarga
                 this.emit('downloadStarted', { url: videoUrl, tag, status: 'starting', message: `Iniciando descarga directa` });
-            }
-
-            // Crear directorio específico para el tag
+            }            // Crear directorio específico para el tag de forma segura
             const tagDir = path.join(outputDir, tag);
-            if (!fs.existsSync(tagDir)) {
-                fs.mkdirSync(tagDir, { recursive: true });
-            }
+            this.createDirectorySafely(tagDir);
 
             // Obtener extensión del archivo original
             const originalFilename = path.basename(videoUrl);
@@ -379,11 +463,9 @@ export class Downloader extends EventEmitter {
                     try {
                         const videoUrl = await this.getVideoUrlFromPost(postUrl);
                         if (videoUrl) {
-                            // Crear directorio específico para el tag
+                            // Crear directorio específico para el tag de forma segura
                             const tagDir = path.join(outputDir, tag);
-                            if (!fs.existsSync(tagDir)) {
-                                fs.mkdirSync(tagDir, { recursive: true });
-                            }
+                            this.createDirectorySafely(tagDir);
 
                             // Obtener extensión del archivo original
                             const originalFilename = path.basename(videoUrl);

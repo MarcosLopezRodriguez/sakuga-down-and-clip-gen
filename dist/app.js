@@ -371,6 +371,7 @@ class SakugaDownAndClipGen {
                 // Verificar si la carpeta del clip está vacía y eliminarla si lo está
                 const clipDir = path.dirname(fullPath);
                 const remainingFiles = fs.readdirSync(clipDir);
+                // Check if the directory is empty and is not the main clip directory
                 if (remainingFiles.length === 0 && clipDir !== this.clipDirectory) {
                     try {
                         fs.rmdirSync(clipDir);
