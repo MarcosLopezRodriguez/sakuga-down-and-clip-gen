@@ -594,26 +594,66 @@ function createClipElement(clip, globalIndex) {
     videoElement.src = `/clips/${clip.path}`;
     videoElement.preload = 'none'; // Changed to 'none' for better performance
     videoElement.muted = true;
-    videoElement.loop = true;
-
-    // Lazy loading: only start loading when video comes into view
+    videoElement.loop = true;    // Lazy loading: start loading and autoplay when video comes into view
     const observer = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
             if (entry.isIntersecting) {
                 videoElement.preload = 'metadata';
+                // Autoplay when the video comes into view
+                videoElement.addEventListener('loadeddata', () => {
+                    videoElement.play().catch(error => {
+                        console.log('Autoplay prevented:', error);
+                    });
+                }, { once: true });
                 observer.unobserve(videoElement);
             }
         });
     });
-    observer.observe(videoElement);
-
-    // Event listener for video click to toggle play/pause
+    observer.observe(videoElement);    // Event listener for video click to toggle play/pause
     videoElement.addEventListener('click', () => {
+        const container = videoElement.closest('.video-container');
+
         if (videoElement.paused) {
-            videoElement.play();
+            videoElement.play().catch(error => {
+                console.log('Play prevented:', error);
+            });
+            // Show play icon feedback
+            if (container) {
+                container.classList.add('show-play-icon');
+                setTimeout(() => {
+                    container.classList.remove('show-play-icon');
+                }, 800);
+            }
         } else {
             videoElement.pause();
+            // Show pause icon feedback
+            if (container) {
+                container.classList.add('show-pause-icon');
+                setTimeout(() => {
+                    container.classList.remove('show-pause-icon');
+                }, 800);
+            }
         }
+    });
+
+    // Add event listeners for visual feedback
+    videoElement.addEventListener('play', () => {
+        videoElement.removeAttribute('paused');
+    });
+
+    videoElement.addEventListener('pause', () => {
+        videoElement.setAttribute('paused', 'true');
+    });
+
+    // Add visual indicator on hover for better UX
+    videoElement.addEventListener('mouseenter', () => {
+        if (!videoElement.paused) {
+            videoElement.style.opacity = '0.9';
+        }
+    });
+
+    videoElement.addEventListener('mouseleave', () => {
+        videoElement.style.opacity = '';
     });
 
     // Delete button
