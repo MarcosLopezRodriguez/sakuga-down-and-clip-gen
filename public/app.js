@@ -10,6 +10,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const navLinks = document.querySelectorAll('.navbar-nav .nav-link');
     const sections = document.querySelectorAll('.section-content');
 
+    // DOM Elements for "Renombrar Clips" Tab
+    const renameClipsForm = document.getElementById('renameClipsForm');
+    const renameInputDir = document.getElementById('renameInputDir');
+    const renameOutputDir = document.getElementById('renameOutputDir');
+    const renameStatus = document.getElementById('renameStatus');
+    const renameResultsContainer = document.getElementById('renameResults');
+
+
     navLinks.forEach(link => {
         link.addEventListener('click', (e) => {
             e.preventDefault();
@@ -233,6 +241,101 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Procesamiento de etiqueta completado:', data);
         showDownloadStatus(`${data.message}`);
     });
+
+    // Event Listener for the Rename Form Submission
+    if (renameClipsForm) {
+        renameClipsForm.addEventListener('submit', async (event) => {
+            event.preventDefault(); // Prevent default form submission
+
+            const inputDir = renameInputDir?.value.trim() || 'input'; // Default to 'input'
+            const outputDir = renameOutputDir?.value.trim() || 'output'; // Default to 'output'
+
+            if (renameStatus) {
+                renameStatus.textContent = 'Renombrando videos...';
+                renameStatus.className = 'alert alert-info'; // Bootstrap class
+            }
+            if (renameResultsContainer) {
+                renameResultsContainer.innerHTML = ''; // Clear previous results
+            }
+
+            try {
+                const response = await fetch('/api/rename-clips', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ inputDir, outputDir }),
+                });
+
+                const data = await response.json();
+
+                if (renameStatus) {
+                    if (response.ok && data.success) {
+                        renameStatus.textContent = data.message || 'Proceso completado.';
+                        renameStatus.className = 'alert alert-success';
+                    } else {
+                        renameStatus.textContent = `Error: ${data.message || response.statusText || 'Error desconocido'}`;
+                        renameStatus.className = 'alert alert-danger';
+                    }
+                }
+
+                if (renameResultsContainer && data.results) {
+                    if (data.results.length === 0 && response.ok && data.success) {
+                         const noFilesItem = document.createElement('div');
+                         noFilesItem.className = 'list-group-item';
+                         noFilesItem.textContent = 'No se encontraron archivos MP4 para renombrar en el directorio de entrada especificado.';
+                         renameResultsContainer.appendChild(noFilesItem);
+                    } else {
+                        data.results.forEach((result) => { // Removed type annotation for JS
+                            const item = document.createElement('div');
+                            item.className = 'list-group-item d-flex justify-content-between align-items-center';
+                            
+                            let statusClass = '';
+                            let icon = '';
+                            let originalPathDisplay = result.originalPath || (result.error && result.error.toLowerCase().includes("input directory") ? inputDir : 'Archivo no especificado');
+
+                            switch (result.status) {
+                                case 'Renamed':
+                                    statusClass = 'text-success';
+                                    icon = '<i class="bi bi-check-circle-fill me-2"></i>';
+                                    item.innerHTML = `<span>${icon}<strong>${originalPathDisplay}</strong> <i class="bi bi-arrow-right mx-1"></i> ${result.newName}</span> <span class="badge bg-success rounded-pill">${result.status}</span>`;
+                                    break;
+                                case 'Error':
+                                    statusClass = 'text-danger';
+                                    icon = '<i class="bi bi-x-circle-fill me-2"></i>';
+                                    item.innerHTML = `<span>${icon}<strong>${originalPathDisplay}</strong></span> <span class="badge bg-danger rounded-pill">${result.status}</span><small class="ms-2 text-muted">${result.error}</small>`;
+                                    break;
+                                case 'Skipped':
+                                    statusClass = 'text-warning';
+                                    icon = '<i class="bi bi-skip-forward-fill me-2"></i>';
+                                     item.innerHTML = `<span>${icon}<strong>${originalPathDisplay}</strong></span> <span class="badge bg-warning text-dark rounded-pill">${result.status}</span>`;
+                                    break;
+                                default:
+                                    icon = '<i class="bi bi-question-circle me-2"></i>';
+                                    item.innerHTML = `<span>${icon}<strong>${originalPathDisplay}</strong></span> <span class="badge bg-secondary rounded-pill">${result.status || 'Desconocido'}</span>`;
+                            }
+                            renameResultsContainer.appendChild(item);
+                        });
+                    }
+                } else if (renameResultsContainer && response.ok && data.success && data.results === undefined) {
+                    // Case where API returns success but no results array (e.g. input dir not found handled by status)
+                    // This might be redundant if the status message already covers it.
+                    const infoItem = document.createElement('div');
+                    infoItem.className = 'list-group-item';
+                    infoItem.textContent = data.message || 'No se procesaron archivos.';
+                    renameResultsContainer.appendChild(infoItem);
+                }
+
+
+            } catch (error) {
+                if (renameStatus) {
+                    renameStatus.textContent = 'Error de conexión o error inesperado al procesar la solicitud.';
+                    renameStatus.className = 'alert alert-danger';
+                }
+                console.error('Error during rename API call:', error);
+            }
+        });
+    }
 });
 
 // Actualizar la caché de videos

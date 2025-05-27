@@ -1,6 +1,7 @@
 import express from 'express';
 import { Downloader } from './downloader';
 import { ClipGenerator } from './clipGenerator';
+import { Renamer } from './renamer';
 import * as path from 'path';
 import * as fs from 'fs';
 import http from 'http';
@@ -9,6 +10,7 @@ import { Server, Socket } from 'socket.io';
 export class SakugaDownAndClipGen {
     private downloader: Downloader;
     private clipGenerator: ClipGenerator;
+    private renamer: Renamer;
     private app: express.Application;
     private server: http.Server;
     private io: Server;
@@ -23,6 +25,7 @@ export class SakugaDownAndClipGen {
     ) {
         this.downloader = new Downloader('https://www.sakugabooru.com', downloadDirectory);
         this.clipGenerator = new ClipGenerator(clipDirectory);
+        this.renamer = new Renamer();
         this.port = port;
         this.downloadDirectory = downloadDirectory;
         this.clipDirectory = clipDirectory;
@@ -119,6 +122,9 @@ export class SakugaDownAndClipGen {
 
         // API para eliminar un clip
         this.app.post('/api/delete-clip', this.handlePostDeleteClip.bind(this));
+
+        // API para renombrar clips
+        this.app.post('/api/rename-clips', this.handlePostRenameClips.bind(this));
     }
 
     // Handlers para las rutas de Express
@@ -713,6 +719,41 @@ export class SakugaDownAndClipGen {
         }
 
         return resultsMap;
+    }
+
+    private async handlePostRenameClips(req: express.Request, res: express.Response): Promise<void> {
+        try {
+            const { inputDir, outputDir } = req.body;
+
+            // Use default directory names if not provided
+            const effectiveInputDir = inputDir || 'input';
+            const effectiveOutputDir = outputDir || 'output';
+
+            console.log(`Solicitud para renombrar videos. Entrada: ${effectiveInputDir}, Salida: ${effectiveOutputDir}`);
+
+            // Ensure the directories are not trying to access parent directories or restricted paths for security
+            // This is a basic check; more robust validation might be needed depending on security requirements.
+            if (effectiveInputDir.includes('..') || effectiveOutputDir.includes('..')) {
+                res.status(400).json({ error: 'Las rutas de directorio no pueden contener ".." (navegación a directorios padres).' });
+                return;
+            }
+            
+            const results = await this.renamer.renameVideoFiles(effectiveInputDir, effectiveOutputDir);
+
+            if (results.length === 0) {
+                res.json({ success: true, message: 'No se encontraron archivos MP4 para procesar.', results });
+            } else if (results.some(r => r.status === 'Error' && r.error?.includes('Input directory') && results.length === 1)) {
+                // Special case for input directory not found error from Renamer
+                 res.status(404).json({ success: false, message: results[0].error, results });
+            }
+            else {
+                res.json({ success: true, message: 'Proceso de renombrado completado.', results });
+            }
+
+        } catch (error: any) {
+            console.error('Error en el endpoint /api/rename-clips:', error);
+            res.status(500).json({ error: error.message || 'Error interno del servidor durante el renombrado.' });
+        }
     }
 }
 

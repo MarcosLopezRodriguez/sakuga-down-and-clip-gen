@@ -28,6 +28,7 @@
                     <li class="nav-item">
                         <a class="nav-link" href="#" data-section="browser">Explorador</a>
                     </li>
+                    <li class="nav-item"><a class="nav-link" href="#" data-section="rename">Renombrar Clips</a></li>
                 </ul>
             </div>
         </div>
@@ -201,6 +202,45 @@
                                 <p class="mt-3">No hay clips generados</p>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="rename" class="section-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Renombrar Clips MP4</h2>
+                </div>
+                <div class="card-body">
+                    <form id="renameClipsForm" class="needs-validation">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="renameInputDir" class="form-label">Directorio de Entrada:</label>
+                                <input type="text" class="form-control" id="renameInputDir" placeholder="input">
+                                <div class="form-text">Directorio que contiene los videos a renombrar (relativo a la raíz de la app o absoluto). Dejar vacío para usar 'input'.</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="renameOutputDir" class="form-label">Directorio de Salida:</label>
+                                <input type="text" class="form-control" id="renameOutputDir" placeholder="output">
+                                <div class="form-text">Directorio donde se guardarán los videos renombrados (relativo a la raíz de la app o absoluto). Dejar vacío para usar 'output'.</div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-pencil-square"></i> Renombrar Videos
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h3>Proceso de Renombrado</h3>
+                </div>
+                <div class="card-body">
+                    <div id="renameStatus" class="mb-3">No hay procesos de renombrado activos.</div>
+                    <div id="renameResults" class="list-group">
+                        <!-- Los resultados se mostrarán aquí -->
                     </div>
                 </div>
             </div>
