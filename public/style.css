@@ -150,6 +150,42 @@ footer {
     opacity: 1;
 }
 
+/* Styles for Rename Clips Tab */
+#rename-clips .card-body {
+    /* Bootstrap's card-body padding is usually good. Add specific overrides if necessary. */
+}
+
+#folder-list-container {
+    /* Max height and scroll for long folder lists */
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #dee2e6; /* Similar to Bootstrap's input border */
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+}
+
+#folder-list-container .list-group-item {
+    /* Ensure items are not too cramped */
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+}
+
+#folder-list-container .form-check-input {
+    /* Ensure consistent spacing for the checkbox */
+    margin-top: 0; /* Align with text if default is off */
+    /* me-2 (0.5rem) is already applied in JS, adjust if more is needed */
+}
+
+#rename-feedback .alert {
+    /* Ensure alerts have appropriate spacing */
+    margin-top: 1rem;
+}
+
+#rename-button {
+    /* Spacing for the button */
+    margin-top: 1rem;
+}
+
 .delete-clip-btn:hover {
     opacity: 1;
     transform: scale(1.1);

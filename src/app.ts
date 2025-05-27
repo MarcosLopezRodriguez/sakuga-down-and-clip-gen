@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import http from 'http';
 import { Server, Socket } from 'socket.io';
+import { spawn } from 'child_process';
 
 export class SakugaDownAndClipGen {
     private downloader: Downloader;
@@ -119,6 +120,10 @@ export class SakugaDownAndClipGen {
 
         // API para eliminar un clip
         this.app.post('/api/delete-clip', this.handlePostDeleteClip.bind(this));
+
+        // API for listing clip folders and renaming videos
+        this.app.get('/api/clips/list-folders', this.handleListClipFolders.bind(this));
+        this.app.post('/api/clips/rename-videos', this.handleRenameVideos.bind(this));
     }
 
     // Handlers para las rutas de Express
@@ -344,6 +349,133 @@ export class SakugaDownAndClipGen {
         } catch (error: any) {
             res.status(500).json({ error: error.message });
         }
+    }
+
+    // Handler for listing subfolders in the clip directory
+    private handleListClipFolders(req: express.Request, res: express.Response): void {
+        const clipsBaseDir = this.clipDirectory; // output/clips
+
+        if (!fs.existsSync(clipsBaseDir)) {
+            console.log(`Directory ${clipsBaseDir} does not exist.`);
+            res.status(200).json([]); // Return empty array if base directory doesn't exist
+            return;
+        }
+
+        try {
+            const entries = fs.readdirSync(clipsBaseDir, { withFileTypes: true });
+            const folders = entries
+                .filter(entry => entry.isDirectory())
+                .map(entry => entry.name);
+            res.json(folders);
+        } catch (error: any) {
+            console.error(`Error reading directory ${clipsBaseDir}:`, error);
+            res.status(500).json({ error: `Failed to list folders in ${clipsBaseDir}` });
+        }
+    }
+
+    // Handler for renaming videos using the Python script
+    private handleRenameVideos(req: express.Request, res: express.Response): void {
+        const { selectedFolders } = req.body;
+
+        if (!selectedFolders || !Array.isArray(selectedFolders) || selectedFolders.length === 0) {
+            res.status(400).json({
+                status: "error",
+                message: "Invalid request body. 'selectedFolders' is required and must be a non-empty array."
+            });
+            return;
+        }
+
+        const clipsBaseDir = this.clipDirectory; // output/clips
+        const inputDirs = selectedFolders.map(folder => path.join(clipsBaseDir, folder));
+        const outputDir = path.join('output', 'random_names'); // output/random_names
+
+        // Ensure output directory for the script exists, though the script should also handle this
+        try {
+            if (!fs.existsSync(outputDir)) {
+                fs.mkdirSync(outputDir, { recursive: true });
+            }
+        } catch (mkdirError: any) {
+            console.error(`Error creating output directory ${outputDir}:`, mkdirError); res.status(500).json({
+                status: "error",
+                message: "Failed to create output directory for processed videos.",
+                details: mkdirError.message
+            });
+            return;
+        }
+
+        // Validate that input directories exist
+        for (const dir of inputDirs) {
+            if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+                res.status(400).json({
+                    status: "error",
+                    message: `Invalid input directory: ${dir}. Folder does not exist or is not a directory.`,
+                });
+                return;
+            }
+        } const pythonScriptPath = path.resolve(__dirname, '../rename_clips.py'); // Script is at project root
+
+        if (!fs.existsSync(pythonScriptPath)) {
+            console.error(`Python script not found at ${pythonScriptPath}`);
+            res.status(500).json({
+                status: "error",
+                message: "Python script 'rename_clips.py' not found on the server.",
+                details: `Expected at ${pythonScriptPath}`
+            });
+            return;
+        }
+
+        const scriptArgs = [
+            '--input_dirs', ...inputDirs,
+            '--output_dir', outputDir
+        ];
+
+        console.log(`Executing script: python ${pythonScriptPath} ${scriptArgs.join(' ')}`);
+
+        const pythonProcess = spawn('python', [pythonScriptPath, ...scriptArgs]);
+
+        let stdoutData = '';
+        let stderrData = '';
+
+        pythonProcess.stdout.on('data', (data) => {
+            stdoutData += data.toString();
+        });
+
+        pythonProcess.stderr.on('data', (data) => {
+            stderrData += data.toString();
+        });
+
+
+
+
+
+
+
+
+        pythonProcess.on('close', (code) => {
+            console.log(`Python script stdout:\n${stdoutData}`);
+            console.error(`Python script stderr:\n${stderrData}`);
+            if (code === 0) {
+                res.status(200).json({
+                    status: "success",
+                    message: "Videos renamed successfully."
+                });
+            } else {
+                res.status(500).json({
+                    status: "error",
+                    message: "Error processing videos.",
+                    details: stderrData.trim() || `Python script exited with code ${code}`
+                });
+            }
+        });
+
+        pythonProcess.on('error', (err) => {
+            console.error('Failed to start Python script:', err);
+            res.status(500).json({
+                status: "error",
+                message: "Failed to start video processing script.",
+                details: err.message
+            });
+        });
     }
 
     /**
@@ -655,64 +787,71 @@ export class SakugaDownAndClipGen {
      * @returns Mapa de rutas de video a rutas de clips generados
      */
     async processVideosDirectoryAndGenerateClips(
-        videosDirectory: string,
+        videosDirectory: string, // This parameter is the base directory containing video files or subfolders with videos
         sceneOptions: {
             minDuration?: number,
             maxDuration?: number,
             threshold?: number,
-            useFFmpegDetection?: boolean
+            useFFmpegDetection?: boolean // Option to choose detection method
         } = {}
-    ): Promise<Map<string, string[]>> {
-        const resultsMap = new Map<string, string[]>();
+    ): Promise<Map<string, string[]>> { // Returns a map of original video paths to array of generated clip paths
+        const resultsMap = new Map<string, string[]>(); // Initialize a map to store results
 
         try {
+            // Check if the provided directory exists
             if (!fs.existsSync(videosDirectory)) {
+                console.error(`Error: Videos directory does not exist at ${videosDirectory}`);
                 throw new Error(`El directorio de videos no existe: ${videosDirectory}`);
             }
 
-            // Leer todos los archivos del directorio
-            const processDirectory = async (dirPath: string) => {
-                const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+            // Recursive function to process files and subdirectories
+            const processDirectory = async (currentDirPath: string) => {
+                const entries = fs.readdirSync(currentDirPath, { withFileTypes: true });
 
                 for (const entry of entries) {
-                    const fullPath = path.join(dirPath, entry.name);
+                    const fullPath = path.join(currentDirPath, entry.name);
 
                     if (entry.isDirectory()) {
-                        // Procesar subdirectorios recursivamente
+                        // If entry is a directory, recurse into it
+                        console.log(`Scanning subdirectory: ${fullPath}`);
                         await processDirectory(fullPath);
                     } else if (entry.isFile() && /\.(mp4|webm|mkv)$/i.test(entry.name)) {
-                        // Procesar archivos de video
+                        // If entry is a supported video file, process it
                         console.log(`Procesando video: ${fullPath}`);
+                        this.io.emit('clipGenerationStatus', { video: fullPath, status: 'processing' });
 
-                        let clipPaths: string[];
 
+                        let clipPaths: string[]; // Array to hold paths of generated clips
+
+                        // Choose scene detection method based on sceneOptions
                         if (sceneOptions.useFFmpegDetection) {
-                            // Usar FFmpeg para detección de escenas
                             clipPaths = await this.clipGenerator.detectScenesWithFFmpegAndGenerateClips(
                                 fullPath,
                                 sceneOptions
                             );
                         } else {
-                            // Usar PySceneDetect para detección de escenas
                             clipPaths = await this.clipGenerator.detectScenesAndGenerateClips(
                                 fullPath,
                                 sceneOptions
                             );
                         }
-
-                        resultsMap.set(fullPath, clipPaths);
+                        this.io.emit('clipGenerationStatus', { video: fullPath, status: 'completed', clips: clipPaths.length });
+                        resultsMap.set(fullPath, clipPaths); // Store the result in the map
                     }
                 }
             };
 
-            await processDirectory(videosDirectory);
+            await processDirectory(videosDirectory); // Start processing from the root videosDirectory
 
         } catch (error) {
-            console.error(`Error procesando directorio de videos:`, error);
-            throw error;
+            console.error(`Error procesando directorio de videos: ${videosDirectory}`, error);
+            this.io.emit('clipGenerationError', { directory: videosDirectory, error: (error as Error).message });
+            throw error; // Re-throw the error to be handled by the caller
         }
-
-        return resultsMap;
+        // Notificar la actualización de la lista de clips
+        const clips = this.getDirectoryContents(this.clipDirectory);
+        this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
+        return resultsMap; // Return the map of results
     }
 }
 

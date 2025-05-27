@@ -28,6 +28,9 @@
                     <li class="nav-item">
                         <a class="nav-link" href="#" data-section="browser">Explorador</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-section="rename-clips">Renombrar Clips</a>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -202,6 +205,34 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Sección para renombrar clips -->
+        <section id="rename-clips" class="section-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Renombrar Clips</h2>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">
+                        Selecciona las carpetas de clips que deseas procesar. Los videos MP4 dentro de estas carpetas (y sus subcarpetas)
+                        serán copiados a una nueva ubicación ('output/random_names') con nombres aleatorios de 20 dígitos.
+                    </p>
+                    <div id="folder-loading-indicator" class="alert alert-info" role="alert">
+                        <div class="spinner-border spinner-border-sm" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        Cargando carpetas...
+                    </div>
+                    <div id="folder-list-container" class="mb-3">
+                        <!-- Las carpetas se cargarán aquí -->
+                    </div>
+                    <button id="rename-button" class="btn btn-success">
+                        <i class="bi bi-pencil-square"></i> Renombrar Clips Seleccionados
+                    </button>
+                    <div id="rename-feedback" class="mt-3"></div>
                 </div>
             </div>
         </section>
