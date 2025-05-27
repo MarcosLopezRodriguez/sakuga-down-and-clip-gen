@@ -357,7 +357,8 @@ export class SakugaDownAndClipGen {
 
         if (!fs.existsSync(clipsBaseDir)) {
             console.log(`Directory ${clipsBaseDir} does not exist.`);
-            return res.status(200).json([]); // Return empty array if base directory doesn't exist
+            res.status(200).json([]); // Return empty array if base directory doesn't exist
+            return;
         }
 
         try {
@@ -377,10 +378,11 @@ export class SakugaDownAndClipGen {
         const { selectedFolders } = req.body;
 
         if (!selectedFolders || !Array.isArray(selectedFolders) || selectedFolders.length === 0) {
-            return res.status(400).json({
+            res.status(400).json({
                 status: "error",
                 message: "Invalid request body. 'selectedFolders' is required and must be a non-empty array."
             });
+            return;
         }
 
         const clipsBaseDir = this.clipDirectory; // output/clips
@@ -393,40 +395,40 @@ export class SakugaDownAndClipGen {
                 fs.mkdirSync(outputDir, { recursive: true });
             }
         } catch (mkdirError: any) {
-            console.error(`Error creating output directory ${outputDir}:`, mkdirError);
-            return res.status(500).json({
+            console.error(`Error creating output directory ${outputDir}:`, mkdirError); res.status(500).json({
                 status: "error",
                 message: "Failed to create output directory for processed videos.",
                 details: mkdirError.message
             });
+            return;
         }
-        
+
         // Validate that input directories exist
         for (const dir of inputDirs) {
             if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
-                return res.status(400).json({
+                res.status(400).json({
                     status: "error",
                     message: `Invalid input directory: ${dir}. Folder does not exist or is not a directory.`,
                 });
+                return;
             }
-        }
-
-        const pythonScriptPath = path.resolve(__dirname, '../../rename_clips.py'); // Assuming script is at project root
+        } const pythonScriptPath = path.resolve(__dirname, '../rename_clips.py'); // Script is at project root
 
         if (!fs.existsSync(pythonScriptPath)) {
-             console.error(`Python script not found at ${pythonScriptPath}`);
-             return res.status(500).json({
-                 status: "error",
-                 message: "Python script 'rename_clips.py' not found on the server.",
-                 details: `Expected at ${pythonScriptPath}`
-             });
+            console.error(`Python script not found at ${pythonScriptPath}`);
+            res.status(500).json({
+                status: "error",
+                message: "Python script 'rename_clips.py' not found on the server.",
+                details: `Expected at ${pythonScriptPath}`
+            });
+            return;
         }
 
         const scriptArgs = [
             '--input_dirs', ...inputDirs,
             '--output_dir', outputDir
         ];
-        
+
         console.log(`Executing script: python ${pythonScriptPath} ${scriptArgs.join(' ')}`);
 
         const pythonProcess = spawn('python', [pythonScriptPath, ...scriptArgs]);
@@ -442,14 +444,20 @@ export class SakugaDownAndClipGen {
             stderrData += data.toString();
         });
 
+
+
+
+
+
+
+
         pythonProcess.on('close', (code) => {
             console.log(`Python script stdout:\n${stdoutData}`);
             console.error(`Python script stderr:\n${stderrData}`);
             if (code === 0) {
                 res.status(200).json({
                     status: "success",
-                    message: "Videos processed successfully.",
-                    details: stdoutData.trim()
+                    message: "Videos renamed successfully."
                 });
             } else {
                 res.status(500).json({
