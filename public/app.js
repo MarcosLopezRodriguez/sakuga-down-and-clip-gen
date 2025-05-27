@@ -10,28 +10,34 @@ document.addEventListener('DOMContentLoaded', () => {
     const navLinks = document.querySelectorAll('.navbar-nav .nav-link');
     const sections = document.querySelectorAll('.section-content');
 
-    // DOM Elements for "Renombrar Clips" Tab
-    const renameClipsForm = document.getElementById('renameClipsForm');
-    const renameInputDir = document.getElementById('renameInputDir');
-    const renameOutputDir = document.getElementById('renameOutputDir');
-    const renameStatus = document.getElementById('renameStatus');
-    const renameResultsContainer = document.getElementById('renameResults');
-
-
     navLinks.forEach(link => {
         link.addEventListener('click', (e) => {
             e.preventDefault();
-            const targetSection = link.dataset.section;
+            const targetSectionId = link.dataset.section;
 
             // Hide all sections and remove active class from nav links
             sections.forEach(section => section.classList.remove('active'));
             navLinks.forEach(navLink => navLink.classList.remove('active'));
 
             // Show target section and set active class on clicked link
-            document.getElementById(targetSection).classList.add('active');
+            const targetSectionElement = document.getElementById(targetSectionId);
+            if (targetSectionElement) {
+                targetSectionElement.classList.add('active');
+            }
             link.classList.add('active');
+
+            // If the rename-clips tab is activated, fetch its folders
+            if (targetSectionId === 'rename-clips') {
+                fetchAndDisplayClipFolders();
+            }
         });
     });
+
+    // Specific elements for the "Rename Clips" tab
+    const folderLoadingIndicator = document.getElementById('folder-loading-indicator');
+    const folderListContainer = document.getElementById('folder-list-container');
+    const renameButton = document.getElementById('rename-button');
+    const renameFeedback = document.getElementById('rename-feedback');
 
     // Initialize video lists
     loadVideoLists();
@@ -242,100 +248,116 @@ document.addEventListener('DOMContentLoaded', () => {
         showDownloadStatus(`${data.message}`);
     });
 
-    // Event Listener for the Rename Form Submission
-    if (renameClipsForm) {
-        renameClipsForm.addEventListener('submit', async (event) => {
-            event.preventDefault(); // Prevent default form submission
+    // --- Rename Clips Tab Functionality ---
 
-            const inputDir = renameInputDir?.value.trim() || 'input'; // Default to 'input'
-            const outputDir = renameOutputDir?.value.trim() || 'output'; // Default to 'output'
+    async function fetchAndDisplayClipFolders() {
+        if (!folderLoadingIndicator || !folderListContainer || !renameFeedback) {
+            console.error('Required elements for rename clips tab are missing.');
+            return;
+        }
 
-            if (renameStatus) {
-                renameStatus.textContent = 'Renombrando videos...';
-                renameStatus.className = 'alert alert-info'; // Bootstrap class
+        folderLoadingIndicator.style.display = 'block';
+        folderListContainer.innerHTML = ''; // Clear previous list
+        renameFeedback.innerHTML = '';    // Clear previous feedback
+        renameFeedback.className = 'mt-3'; // Reset class
+
+        try {
+            const response = await fetch('/api/clips/list-folders');
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: 'Failed to fetch folders. Server returned an error.' }));
+                throw new Error(errorData.message || `HTTP error ${response.status}`);
             }
-            if (renameResultsContainer) {
-                renameResultsContainer.innerHTML = ''; // Clear previous results
-            }
+            const folders = await response.json();
 
-            try {
-                const response = await fetch('/api/rename-clips', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ inputDir, outputDir }),
+            if (folders.length === 0) {
+                folderListContainer.innerHTML = '<p class="text-muted">No folders found in the clips directory.</p>';
+            } else {
+                const listGroup = document.createElement('div');
+                listGroup.className = 'list-group';
+                folders.forEach(folder => {
+                    const listItem = document.createElement('label');
+                    listItem.className = 'list-group-item d-flex align-items-center';
+                    listItem.innerHTML = `
+                        <input class="form-check-input me-2" type="checkbox" value="${folder}" id="folder-${folder}">
+                        ${folder}
+                    `;
+                    listGroup.appendChild(listItem);
                 });
-
-                const data = await response.json();
-
-                if (renameStatus) {
-                    if (response.ok && data.success) {
-                        renameStatus.textContent = data.message || 'Proceso completado.';
-                        renameStatus.className = 'alert alert-success';
-                    } else {
-                        renameStatus.textContent = `Error: ${data.message || response.statusText || 'Error desconocido'}`;
-                        renameStatus.className = 'alert alert-danger';
-                    }
-                }
-
-                if (renameResultsContainer && data.results) {
-                    if (data.results.length === 0 && response.ok && data.success) {
-                         const noFilesItem = document.createElement('div');
-                         noFilesItem.className = 'list-group-item';
-                         noFilesItem.textContent = 'No se encontraron archivos MP4 para renombrar en el directorio de entrada especificado.';
-                         renameResultsContainer.appendChild(noFilesItem);
-                    } else {
-                        data.results.forEach((result) => { // Removed type annotation for JS
-                            const item = document.createElement('div');
-                            item.className = 'list-group-item d-flex justify-content-between align-items-center';
-                            
-                            let statusClass = '';
-                            let icon = '';
-                            let originalPathDisplay = result.originalPath || (result.error && result.error.toLowerCase().includes("input directory") ? inputDir : 'Archivo no especificado');
-
-                            switch (result.status) {
-                                case 'Renamed':
-                                    statusClass = 'text-success';
-                                    icon = '<i class="bi bi-check-circle-fill me-2"></i>';
-                                    item.innerHTML = `<span>${icon}<strong>${originalPathDisplay}</strong> <i class="bi bi-arrow-right mx-1"></i> ${result.newName}</span> <span class="badge bg-success rounded-pill">${result.status}</span>`;
-                                    break;
-                                case 'Error':
-                                    statusClass = 'text-danger';
-                                    icon = '<i class="bi bi-x-circle-fill me-2"></i>';
-                                    item.innerHTML = `<span>${icon}<strong>${originalPathDisplay}</strong></span> <span class="badge bg-danger rounded-pill">${result.status}</span><small class="ms-2 text-muted">${result.error}</small>`;
-                                    break;
-                                case 'Skipped':
-                                    statusClass = 'text-warning';
-                                    icon = '<i class="bi bi-skip-forward-fill me-2"></i>';
-                                     item.innerHTML = `<span>${icon}<strong>${originalPathDisplay}</strong></span> <span class="badge bg-warning text-dark rounded-pill">${result.status}</span>`;
-                                    break;
-                                default:
-                                    icon = '<i class="bi bi-question-circle me-2"></i>';
-                                    item.innerHTML = `<span>${icon}<strong>${originalPathDisplay}</strong></span> <span class="badge bg-secondary rounded-pill">${result.status || 'Desconocido'}</span>`;
-                            }
-                            renameResultsContainer.appendChild(item);
-                        });
-                    }
-                } else if (renameResultsContainer && response.ok && data.success && data.results === undefined) {
-                    // Case where API returns success but no results array (e.g. input dir not found handled by status)
-                    // This might be redundant if the status message already covers it.
-                    const infoItem = document.createElement('div');
-                    infoItem.className = 'list-group-item';
-                    infoItem.textContent = data.message || 'No se procesaron archivos.';
-                    renameResultsContainer.appendChild(infoItem);
-                }
-
-
-            } catch (error) {
-                if (renameStatus) {
-                    renameStatus.textContent = 'Error de conexión o error inesperado al procesar la solicitud.';
-                    renameStatus.className = 'alert alert-danger';
-                }
-                console.error('Error during rename API call:', error);
+                folderListContainer.appendChild(listGroup);
             }
-        });
+        } catch (error) {
+            console.error('Error fetching clip folders:', error);
+            folderListContainer.innerHTML = `<p class="text-danger">Error loading folders: ${error.message}</p>`;
+        } finally {
+            folderLoadingIndicator.style.display = 'none';
+        }
     }
+
+    async function handleRenameButtonClick() {
+        if (!folderListContainer || !renameFeedback || !renameButton) {
+            console.error('Required elements for rename clips tab are missing.');
+            return;
+        }
+
+        const selectedCheckboxes = folderListContainer.querySelectorAll('input[type="checkbox"]:checked');
+        const selectedFolders = Array.from(selectedCheckboxes).map(cb => cb.value);
+
+        renameFeedback.innerHTML = '';
+        renameFeedback.className = 'mt-3'; // Reset class
+
+        if (selectedFolders.length === 0) {
+            renameFeedback.textContent = 'Please select at least one folder.';
+            renameFeedback.classList.add('alert', 'alert-warning');
+            return;
+        }
+
+        renameFeedback.textContent = 'Processing...';
+        renameFeedback.classList.add('alert', 'alert-info');
+        renameButton.disabled = true;
+
+        try {
+            const response = await fetch('/api/clips/rename-videos', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ selectedFolders }),
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                renameFeedback.textContent = `${result.message} Details: ${result.details || 'N/A'}`;
+                renameFeedback.classList.remove('alert-info', 'alert-danger');
+                renameFeedback.classList.add('alert', 'alert-success');
+                // Optionally, refresh folder list or clear selection
+                // fetchAndDisplayClipFolders(); // Re-fetch to clear selection, or manually clear:
+                selectedCheckboxes.forEach(cb => cb.checked = false);
+            } else {
+                renameFeedback.textContent = `Error: ${result.message || 'Unknown error'} Details: ${result.details || 'N/A'}`;
+                renameFeedback.classList.remove('alert-info', 'alert-success');
+                renameFeedback.classList.add('alert', 'alert-danger');
+            }
+        } catch (error) {
+            console.error('Error renaming clips:', error);
+            renameFeedback.textContent = `Network error or failed to parse response: ${error.message}`;
+            renameFeedback.classList.remove('alert-info', 'alert-success');
+            renameFeedback.classList.add('alert', 'alert-danger');
+        } finally {
+            renameButton.disabled = false;
+        }
+    }
+
+    if (renameButton) {
+        renameButton.addEventListener('click', handleRenameButtonClick);
+    }
+    // Initial call if rename-clips is the active tab by default (e.g. after page refresh on that tab)
+    // This depends on how active tab state is persisted or set on load.
+    // For now, relying on tab click. If direct load to tab is possible, add:
+    // if (document.querySelector('.navbar-nav .nav-link[data-section="rename-clips"].active')) {
+    //    fetchAndDisplayClipFolders();
+    // }
+
 });
 
 // Actualizar la caché de videos
