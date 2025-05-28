@@ -301,12 +301,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const selectedCheckboxes = folderListContainer.querySelectorAll('input[type="checkbox"]:checked');
         const selectedFolders = Array.from(selectedCheckboxes).map(cb => cb.value);
+        const outputSubfolderName = document.getElementById('outputSubfolderName').value.trim();
 
         renameFeedback.innerHTML = '';
         renameFeedback.className = 'mt-3'; // Reset class
 
         if (selectedFolders.length === 0) {
             renameFeedback.textContent = 'Please select at least one folder.';
+            renameFeedback.classList.add('alert', 'alert-warning');
+            return;
+        }
+
+        if (!outputSubfolderName) {
+            renameFeedback.textContent = 'Please enter a name for the output subfolder.';
             renameFeedback.classList.add('alert', 'alert-warning');
             return;
         }
@@ -321,7 +328,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ selectedFolders }),
+                body: JSON.stringify({ selectedFolders, outputSubfolder: outputSubfolderName }),
             });
 
             const result = await response.json();

@@ -375,7 +375,7 @@ export class SakugaDownAndClipGen {
 
     // Handler for renaming videos using the Python script
     private handleRenameVideos(req: express.Request, res: express.Response): void {
-        const { selectedFolders } = req.body;
+        const { selectedFolders, outputSubfolder } = req.body;
 
         if (!selectedFolders || !Array.isArray(selectedFolders) || selectedFolders.length === 0) {
             res.status(400).json({
@@ -385,9 +385,17 @@ export class SakugaDownAndClipGen {
             return;
         }
 
+        if (!outputSubfolder || typeof outputSubfolder !== 'string' || outputSubfolder.trim() === '') {
+            res.status(400).json({
+                status: "error",
+                message: "Invalid request body. 'outputSubfolder' is required and must be a non-empty string."
+            });
+            return;
+        }
+
         const clipsBaseDir = this.clipDirectory; // output/clips
         const inputDirs = selectedFolders.map(folder => path.join(clipsBaseDir, folder));
-        const outputDir = path.join('output', 'random_names'); // output/random_names
+        const outputDir = path.join('output', 'random_names', outputSubfolder.trim()); // output/random_names
 
         // Ensure output directory for the script exists, though the script should also handle this
         try {
