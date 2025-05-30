@@ -220,6 +220,11 @@
                         Selecciona las carpetas de clips que deseas procesar. Los videos MP4 dentro de estas carpetas (y sus subcarpetas)
                         serán copiados a una nueva ubicación ('output/random_names') con nombres aleatorios de 20 dígitos.
                     </p>
+                    <input type="text" class="form-control mb-2" id="folderFilterInput" placeholder="Filtrar carpetas...">
+                    <div class="mb-3 btn-group btn-group-sm">
+                        <button type="button" class="btn btn-outline-secondary" id="selectAllFoldersBtn">Seleccionar Todo</button>
+                        <button type="button" class="btn btn-outline-secondary" id="deselectAllFoldersBtn">Desmarcar Todo</button>
+                    </div>
                     <div id="folder-loading-indicator" class="alert alert-info" role="alert">
                         <div class="spinner-border spinner-border-sm" role="status">
                             <span class="visually-hidden">Loading...</span>
