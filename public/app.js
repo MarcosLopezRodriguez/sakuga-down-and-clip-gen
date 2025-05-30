@@ -39,6 +39,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const renameButton = document.getElementById('rename-button');
     const renameFeedback = document.getElementById('rename-feedback');
 
+    let allClipFolders = []; // Variable to store all clip folders
+
     // Initialize video lists
     loadVideoLists();
     loadFoldersList();
@@ -250,6 +252,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Rename Clips Tab Functionality ---
 
+    function renderClipFolderList(foldersToShow) {
+        if (!folderListContainer) return;
+        folderListContainer.innerHTML = ''; // Clear previous list
+
+        if (foldersToShow.length === 0) {
+            folderListContainer.innerHTML = '<p class="text-muted">No folders match your filter or no folders found.</p>';
+            return;
+        }
+
+        const listGroup = document.createElement('div');
+        listGroup.className = 'list-group';
+        foldersToShow.forEach(folder => {
+            const listItem = document.createElement('label');
+            listItem.className = 'list-group-item d-flex align-items-center';
+            listItem.innerHTML = `
+                <input class="form-check-input me-2" type="checkbox" value="${folder}" id="folder-${folder}">
+                ${folder}
+            `;
+            listGroup.appendChild(listItem);
+        });
+        folderListContainer.appendChild(listGroup);
+    }
+
     async function fetchAndDisplayClipFolders() {
         if (!folderLoadingIndicator || !folderListContainer || !renameFeedback) {
             console.error('Required elements for rename clips tab are missing.');
@@ -257,7 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         folderLoadingIndicator.style.display = 'block';
-        folderListContainer.innerHTML = ''; // Clear previous list
+        // folderListContainer.innerHTML = ''; // Clear previous list - Handled by renderClipFolderList
         renameFeedback.innerHTML = '';    // Clear previous feedback
         renameFeedback.className = 'mt-3'; // Reset class
 
@@ -268,26 +293,44 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(errorData.message || `HTTP error ${response.status}`);
             }
             const folders = await response.json();
+            allClipFolders = folders; // Store fetched folders
+            renderClipFolderList(allClipFolders); // Display all folders initially
 
-            if (folders.length === 0) {
-                folderListContainer.innerHTML = '<p class="text-muted">No folders found in the clips directory.</p>';
-            } else {
-                const listGroup = document.createElement('div');
-                listGroup.className = 'list-group';
-                folders.forEach(folder => {
-                    const listItem = document.createElement('label');
-                    listItem.className = 'list-group-item d-flex align-items-center';
-                    listItem.innerHTML = `
-                        <input class="form-check-input me-2" type="checkbox" value="${folder}" id="folder-${folder}">
-                        ${folder}
-                    `;
-                    listGroup.appendChild(listItem);
+            // Setup event listeners for filter and select/deselect buttons
+            // Ensure this is done only once or remove previous listeners if called multiple times
+            const folderFilterInput = document.getElementById('folderFilterInput');
+            const selectAllFoldersBtn = document.getElementById('selectAllFoldersBtn');
+            const deselectAllFoldersBtn = document.getElementById('deselectAllFoldersBtn');
+
+            if (folderFilterInput) {
+                folderFilterInput.addEventListener('input', (e) => {
+                    const filterText = e.target.value.toLowerCase();
+                    const filteredFolders = allClipFolders.filter(folder => folder.toLowerCase().includes(filterText));
+                    renderClipFolderList(filteredFolders);
                 });
-                folderListContainer.appendChild(listGroup);
             }
+
+            if (selectAllFoldersBtn) {
+                selectAllFoldersBtn.addEventListener('click', () => {
+                    if (folderListContainer) {
+                        folderListContainer.querySelectorAll('input[type="checkbox"]').forEach(checkbox => checkbox.checked = true);
+                    }
+                });
+            }
+
+            if (deselectAllFoldersBtn) {
+                deselectAllFoldersBtn.addEventListener('click', () => {
+                    if (folderListContainer) {
+                        folderListContainer.querySelectorAll('input[type="checkbox"]').forEach(checkbox => checkbox.checked = false);
+                    }
+                });
+            }
+
         } catch (error) {
             console.error('Error fetching clip folders:', error);
-            folderListContainer.innerHTML = `<p class="text-danger">Error loading folders: ${error.message}</p>`;
+            allClipFolders = []; // Ensure it's an empty array on error
+            renderClipFolderList(allClipFolders); // Display error/empty message
+            // folderListContainer.innerHTML = `<p class="text-danger">Error loading folders: ${error.message}</p>`;
         } finally {
             folderLoadingIndicator.style.display = 'none';
         }
