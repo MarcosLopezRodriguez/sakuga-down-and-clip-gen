@@ -32,11 +32,12 @@ function isExecutableAvailable(executableName: string): boolean {
 
 // Intentar buscar FFmpeg de manera más exhaustiva
 function findFFmpegPath(): string | null {
-    // Verificar si está en el PATH
+    // Verificar si ffmpeg está disponible en el PATH
     if (isExecutableAvailable('ffmpeg')) {
         try {
-            const output = execSync('where ffmpeg', { encoding: 'utf8' }).trim();
-            const paths = output.split('\n');
+            const cmd = process.platform === 'win32' ? 'where ffmpeg' : 'which ffmpeg';
+            const output = execSync(cmd, { encoding: 'utf8' }).trim();
+            const paths = output.split(/\r?\n/);
             if (paths.length > 0) {
                 return paths[0].trim();
             }
