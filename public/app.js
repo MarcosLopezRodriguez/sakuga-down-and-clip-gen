@@ -29,6 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // If the rename-clips tab is activated, fetch its folders
             if (targetSectionId === 'rename-clips') {
                 fetchAndDisplayClipFolders();
+            } else if (targetSectionId === 'beat-sync') {
+                fetchAndDisplayBeatSyncClipFolders(); // Function to be added later
             }
         });
     });
@@ -38,8 +40,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const folderListContainer = document.getElementById('folder-list-container');
     const renameButton = document.getElementById('rename-button');
     const renameFeedback = document.getElementById('rename-feedback');
+    let allClipFolders = []; // Variable to store all clip folders for rename tab
 
-    let allClipFolders = []; // Variable to store all clip folders
+    // Specific elements for "Beat Sync" tab
+    const beatSyncFolderListContainer = document.getElementById('beatSyncFolderListContainer');
+    const beatSyncFolderFilterInput = document.getElementById('beatSyncFolderFilterInput');
+    const beatSyncSelectAllFoldersBtn = document.getElementById('beatSyncSelectAllFoldersBtn');
+    const beatSyncDeselectAllFoldersBtn = document.getElementById('beatSyncDeselectAllFoldersBtn');
+    const audioFileUploadInput = document.getElementById('audioFileUpload');
+    const audioInfoDiv = document.getElementById('audioInfo');
+    const audioEndTimeInput = document.getElementById('audioEndTime');
+    // Note: beatSyncForm and generateBeatSyncVideoBtn will be handled for form submission later.
+    let allBeatSyncClipFolders = []; // Variable to store all clip folders for beat-sync tab
 
     // Initialize video lists
     loadVideoLists();
@@ -407,6 +419,271 @@ document.addEventListener('DOMContentLoaded', () => {
     // if (document.querySelector('.navbar-nav .nav-link[data-section="rename-clips"].active')) {
     //    fetchAndDisplayClipFolders();
     // }
+    // Similarly for beat-sync, if it can be default active
+    if (document.querySelector('.navbar-nav .nav-link[data-section="beat-sync"].active')) {
+       fetchAndDisplayBeatSyncClipFolders();
+    }
+
+    // --- Beat Sync Tab Functionality ---
+
+    function renderBeatSyncClipFolderList(foldersToShow) {
+        if (!beatSyncFolderListContainer) return;
+        beatSyncFolderListContainer.innerHTML = ''; // Clear previous list
+
+        if (foldersToShow.length === 0) {
+            beatSyncFolderListContainer.innerHTML = '<p class="text-muted">No folders match your filter or no clip folders found.</p>';
+            return;
+        }
+
+        const listGroup = document.createElement('div');
+        listGroup.className = 'list-group';
+        foldersToShow.forEach(folder => {
+            const listItem = document.createElement('label');
+            listItem.className = 'list-group-item d-flex align-items-center';
+            // Ensure unique IDs for checkboxes if this function is reused or if folder names can clash
+            listItem.innerHTML = `
+                <input class="form-check-input me-2" type="checkbox" value="${folder}" id="beatSyncFolderCheckbox-${folder.replace(/\s+/g, '-')}">
+                ${folder}
+            `;
+            listGroup.appendChild(listItem);
+        });
+        beatSyncFolderListContainer.appendChild(listGroup);
+    }
+
+    async function fetchAndDisplayBeatSyncClipFolders() {
+        if (!beatSyncFolderListContainer) {
+            console.error('Beat sync folder list container not found.');
+            return;
+        }
+        // Display a loading message
+        beatSyncFolderListContainer.innerHTML = '<p class="text-muted">Loading clip folders...</p>';
+
+        try {
+            const response = await fetch('/api/clips/list-folders'); // Assuming same endpoint for now
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: 'Failed to fetch clip folders for beat sync. Server returned an error.' }));
+                throw new Error(errorData.message || `HTTP error ${response.status}`);
+            }
+            const folders = await response.json();
+            allBeatSyncClipFolders = folders;
+            renderBeatSyncClipFolderList(allBeatSyncClipFolders);
+
+        } catch (error) {
+            console.error('Error fetching clip folders for beat sync:', error);
+            allBeatSyncClipFolders = [];
+            beatSyncFolderListContainer.innerHTML = `<p class="text-danger">Error loading folders: ${error.message}</p>`;
+        }
+    }
+
+    if (beatSyncFolderFilterInput) {
+        beatSyncFolderFilterInput.addEventListener('input', (e) => {
+            const filterText = e.target.value.toLowerCase();
+            const filteredFolders = allBeatSyncClipFolders.filter(folder => folder.toLowerCase().includes(filterText));
+            renderBeatSyncClipFolderList(filteredFolders);
+        });
+    }
+
+    if (beatSyncSelectAllFoldersBtn) {
+        beatSyncSelectAllFoldersBtn.addEventListener('click', () => {
+            if (beatSyncFolderListContainer) {
+                beatSyncFolderListContainer.querySelectorAll('input[type="checkbox"]').forEach(checkbox => checkbox.checked = true);
+            }
+        });
+    }
+
+    if (beatSyncDeselectAllFoldersBtn) {
+        beatSyncDeselectAllFoldersBtn.addEventListener('click', () => {
+            if (beatSyncFolderListContainer) {
+                beatSyncFolderListContainer.querySelectorAll('input[type="checkbox"]').forEach(checkbox => checkbox.checked = false);
+            }
+        });
+    }
+
+    if (audioFileUploadInput) {
+        audioFileUploadInput.addEventListener('change', (event) => {
+            const audioFile = event.target.files[0];
+            if (audioFile && audioInfoDiv) {
+                // Clear previous info and show loading
+                audioInfoDiv.textContent = 'Loading audio metadata...';
+                const reader = new FileReader();
+
+                reader.onload = (e) => {
+                    const audio = new Audio(); // Create new Audio object
+                    // It's crucial to set up event listeners before setting src
+                    audio.addEventListener('loadedmetadata', () => {
+                        audioInfoDiv.textContent = `Audio duration: ${audio.duration.toFixed(2)} seconds.`;
+                        if (audioEndTimeInput && !audioEndTimeInput.value) { // Pre-fill only if empty
+                           audioEndTimeInput.value = audio.duration.toFixed(2);
+                        }
+                    });
+                    audio.addEventListener('error', (err) => {
+                        audioInfoDiv.textContent = 'Error loading audio file. Please ensure it is a valid MP3 or WAV file.';
+                        console.error('Error loading audio for metadata:', err, audio.error);
+                    });
+                    audio.src = e.target.result; // Set src to trigger loading
+                };
+                reader.onerror = (err) => { // Handle FileReader errors
+                    audioInfoDiv.textContent = 'Error reading audio file.';
+                    console.error('Error reading file with FileReader:', err);
+                };
+                reader.readAsDataURL(audioFile); // Read the file
+            } else if (audioInfoDiv) { // If no file is selected or audioInfoDiv is missing
+                audioInfoDiv.textContent = 'Sube un audio para ver su duración.';
+            }
+        });
+    }
+
+    const beatSyncForm = document.getElementById('beatSyncForm');
+    const generateBeatSyncVideoBtn = document.getElementById('generateBeatSyncVideoBtn');
+    const beatSyncStatus = document.getElementById('beatSyncStatus');
+    const beatSyncProgressContainer = document.getElementById('beatSyncProgressContainer');
+    const beatSyncProgressBar = document.getElementById('beatSyncProgressBar');
+    const beatSyncResult = document.getElementById('beatSyncResult');
+
+    if (beatSyncForm) {
+        beatSyncForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const audioFile = audioFileUploadInput.files[0];
+            const audioStartTime = parseFloat(document.getElementById('audioStartTime').value) || 0;
+            const audioEndTime = parseFloat(document.getElementById('audioEndTime').value);
+            const outputVideoNameRaw = document.getElementById('outputVideoName').value.trim();
+
+            const selectedClipFolderCheckboxes = beatSyncFolderListContainer.querySelectorAll('input[type="checkbox"]:checked');
+            const selectedClipFolders = Array.from(selectedClipFolderCheckboxes).map(cb => cb.value);
+
+            // --- Validation ---
+            if (!audioFile) {
+                updateBeatSyncStatus('Please upload an audio file.', true);
+                return;
+            }
+            if (isNaN(audioEndTime) || audioEndTime <= audioStartTime) {
+                updateBeatSyncStatus('Audio end time must be greater than start time.', true);
+                return;
+            }
+            if (selectedClipFolders.length === 0) {
+                updateBeatSyncStatus('Please select at least one source clip folder.', true);
+                return;
+            }
+            if (!outputVideoNameRaw) {
+                updateBeatSyncStatus('Please provide an output video name.', true);
+                return;
+            }
+
+            let outputVideoName = outputVideoNameRaw;
+            if (!/\.(mp4|webm|mkv)$/i.test(outputVideoName)) {
+                outputVideoName += '.mp4';
+            }
+
+            // --- UI Updates: Disable form, clear status/results, show progress ---
+            setFormDisabled(true);
+            beatSyncResult.innerHTML = '';
+            updateBeatSyncStatus('Preparing...', false, 0);
+            beatSyncProgressContainer.style.display = 'block';
+
+
+            try {
+                // --- 1. Audio Analysis ---
+                updateBeatSyncStatus('Uploading and analyzing audio...', false, 10);
+                const formData = new FormData();
+                formData.append('audioFile', audioFile);
+
+                const analyzeResponse = await fetch('/api/audio/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!analyzeResponse.ok) {
+                    const errorData = await analyzeResponse.json().catch(() => ({ error: 'Audio analysis request failed.' }));
+                    throw new Error(errorData.error || `Audio analysis failed with status ${analyzeResponse.status}`);
+                }
+
+                const analysisData = await analyzeResponse.json();
+                if (!analysisData.success || !analysisData.analysis || !analysisData.analysis.beats) {
+                    throw new Error(analysisData.error || 'Audio analysis did not return beat data.');
+                }
+
+                const beatTimestamps = analysisData.analysis.beats;
+                updateBeatSyncStatus('Audio analysis complete. Starting video generation...', false, 30);
+
+                // --- 2. Video Generation ---
+                await startVideoGeneration(beatTimestamps, audioStartTime, audioEndTime, selectedClipFolders, outputVideoName);
+
+            } catch (error) {
+                console.error('Beat Sync Error:', error);
+                updateBeatSyncStatus(`Error: ${error.message || 'An unknown error occurred.'}`, true);
+                beatSyncProgressContainer.style.display = 'none'; // Hide progress on error
+            } finally {
+                setFormDisabled(false); // Re-enable form in case of error or completion
+            }
+        });
+    }
+
+    function setFormDisabled(disabled) {
+        if (generateBeatSyncVideoBtn) generateBeatSyncVideoBtn.disabled = disabled;
+        if (audioFileUploadInput) audioFileUploadInput.disabled = disabled;
+        // Could also disable other inputs like start/end times, folder selection, etc.
+        const formElements = beatSyncForm.elements;
+        for (let i = 0; i < formElements.length; i++) {
+            if(formElements[i].id !== 'generateBeatSyncVideoBtn' && formElements[i].id !== 'audioFileUpload') {
+                 // formElements[i].disabled = disabled; // Example to disable all
+            }
+        }
+    }
+
+    function updateBeatSyncStatus(message, isError = false, progressPercent = null) {
+        if (!beatSyncStatus) return;
+        beatSyncStatus.textContent = message;
+        beatSyncStatus.className = `alert ${isError ? 'alert-danger' : 'alert-info'}`;
+        beatSyncStatus.style.display = 'block';
+
+        if (progressPercent !== null && beatSyncProgressBar && beatSyncProgressContainer) {
+            beatSyncProgressContainer.style.display = 'block';
+            beatSyncProgressBar.style.width = `${progressPercent}%`;
+            beatSyncProgressBar.textContent = `${progressPercent}%`;
+            beatSyncProgressBar.setAttribute('aria-valuenow', progressPercent);
+        } else if (isError && beatSyncProgressContainer) {
+             // Optionally hide progress bar on error or set to 100% with error color
+            beatSyncProgressContainer.style.display = 'none';
+        }
+    }
+
+    async function startVideoGeneration(beatTimestamps, audioStartTime, audioEndTime, sourceClipFolderPaths, outputVideoName) {
+        updateBeatSyncStatus('Generating beat-synced video...', false, 40);
+
+        const payload = {
+            beatTimestamps,
+            audioStartTime,
+            audioEndTime,
+            sourceClipFolderPaths,
+            outputVideoName
+        };
+
+        const response = await fetch('/api/video/generate-beat-matched', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Video generation request failed.' }));
+            throw new Error(errorData.error || `Video generation failed with status ${response.status}`);
+        }
+
+        const resultData = await response.json();
+        if (!resultData.success || !resultData.videoPath) {
+            throw new Error(resultData.error || 'Video generation did not return a valid video path.');
+        }
+
+        updateBeatSyncStatus('Video generation complete!', false, 100);
+        beatSyncResult.innerHTML = `
+            <p class="mt-3">Video generated successfully:</p>
+            <video src="/${resultData.videoPath}" controls class="img-fluid"></video>
+            <p class="mt-2"><a href="/${resultData.videoPath}" download="${outputVideoName}" class="btn btn-success">
+                <i class="bi bi-download"></i> Download Video
+            </a></p>
+        `;
+    }
 
 });
 
