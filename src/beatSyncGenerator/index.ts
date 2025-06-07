@@ -96,7 +96,8 @@ export class BeatSyncGenerator {
         audioEndTime: number,
         sourceClipFolderPaths: string[],
         outputVideoName: string,
-        baseClipDirectory: string
+        baseClipDirectory: string,
+        audioFilePath: string
     ): Promise<string> {
         const sourceVideos = this._listSourceVideos(sourceClipFolderPaths, baseClipDirectory);
         if (sourceVideos.length === 0) {
@@ -126,7 +127,9 @@ export class BeatSyncGenerator {
 
         const tempSegmentPaths: string[] = [];
         const concatFilePath = path.join(this.tempSegmentDirectory, 'concat_list.txt');
+        const tempConcatVideoPath = path.join(this.tempSegmentDirectory, `concat_${Date.now()}.mp4`);
         const finalOutputVideoPath = path.join(this.outputDirectory, outputVideoName);
+        let audioSegmentPath = '';
 
         try {
             for (let i = 0; i < effectiveBeatTimestamps.length - 1; i++) {
@@ -226,7 +229,7 @@ export class BeatSyncGenerator {
                 '-crf', '23',
                 '-pix_fmt', 'yuv420p',
                 '-y', // Overwrite output
-                finalOutputVideoPath
+                tempConcatVideoPath
             ];
 
             console.log(`Executing ffmpeg concat: ${this.ffmpegPath} ${concatFfmpegArgs.join(' ')}`);
@@ -243,10 +246,59 @@ export class BeatSyncGenerator {
                         reject(new Error(`FFmpeg (concatenation) exited with code ${code}. Error: ${ffmpegConcatStderr}`));
                     }
                 });
-                 process.on('error', (err) => {
+                process.on('error', (err) => {
                     console.error(`FFmpeg concat process error: ${err.message}`);
                     reject(new Error(`Failed to start FFmpeg concat process: ${err.message}`));
                 });
+            });
+
+            audioSegmentPath = path.join(this.tempSegmentDirectory, `audio_${Date.now()}${path.extname(audioFilePath)}`);
+            const audioCutArgs = [
+                '-i', audioFilePath,
+                '-ss', audioStartTime.toString(),
+                '-t', actualAudioDuration.toString(),
+                '-y',
+                audioSegmentPath
+            ];
+
+            await new Promise<void>((resolve, reject) => {
+                const p = spawn(this.ffmpegPath, audioCutArgs);
+                let stderr = '';
+                p.stderr.on('data', d => stderr += d.toString());
+                p.on('close', code => {
+                    if (code === 0) {
+                        resolve();
+                    } else {
+                        console.error(`FFmpeg audio cut stderr: ${stderr}`);
+                        reject(new Error(`FFmpeg (audio cut) exited with code ${code}.`));
+                    }
+                });
+                p.on('error', err => reject(err));
+            });
+
+            const mergeArgs = [
+                '-i', tempConcatVideoPath,
+                '-i', audioSegmentPath,
+                '-c:v', 'copy',
+                '-c:a', 'aac',
+                '-shortest',
+                '-y',
+                finalOutputVideoPath
+            ];
+
+            await new Promise<void>((resolve, reject) => {
+                const p = spawn(this.ffmpegPath, mergeArgs);
+                let stderr = '';
+                p.stderr.on('data', d => stderr += d.toString());
+                p.on('close', code => {
+                    if (code === 0) {
+                        resolve();
+                    } else {
+                        console.error(`FFmpeg merge stderr: ${stderr}`);
+                        reject(new Error(`FFmpeg (merge) exited with code ${code}.`));
+                    }
+                });
+                p.on('error', err => reject(err));
             });
 
             return finalOutputVideoPath;
@@ -268,6 +320,12 @@ export class BeatSyncGenerator {
                 } catch (e: any) {
                      console.warn(`Failed to delete concat list ${concatFilePath}: ${e.message}`);
                 }
+            }
+            if (fs.existsSync(tempConcatVideoPath)) {
+                try { fs.unlinkSync(tempConcatVideoPath); } catch {}
+            }
+            if (fs.existsSync(audioSegmentPath)) {
+                try { fs.unlinkSync(audioSegmentPath); } catch {}
             }
             // Optionally, try to remove the temp_beat_segments directory if empty
             try {
