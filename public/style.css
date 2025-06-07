@@ -118,8 +118,9 @@ footer {
 
 /* .video-container:hover .video-overlay removed as direct video interaction is preferred */
 
-/* Estilos para el botón de eliminar clip */
-.delete-clip-btn {
+/* Estilos para los botones de eliminación */
+.delete-clip-btn,
+.delete-video-btn {
     position: absolute;
     top: 8px;
     /* Adjusted position */
@@ -145,7 +146,8 @@ footer {
     transition: opacity 0.3s, transform 0.2s, background-color 0.3s;
 }
 
-.video-card:hover .delete-clip-btn {
+.video-card:hover .delete-clip-btn,
+.video-card:hover .delete-video-btn {
     /* Show button on card hover */
     opacity: 1;
 }
@@ -186,7 +188,8 @@ footer {
     margin-top: 1rem;
 }
 
-.delete-clip-btn:hover {
+.delete-clip-btn:hover,
+.delete-video-btn:hover {
     opacity: 1;
     transform: scale(1.1);
     background-color: rgba(220, 53, 69, 1);

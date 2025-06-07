@@ -179,6 +179,9 @@ export class SakugaDownAndClipGen {
         // API para eliminar un clip
         this.app.post('/api/delete-clip', this.handlePostDeleteClip.bind(this));
 
+        // API para eliminar un video descargado
+        this.app.post('/api/delete-video', this.handlePostDeleteVideo.bind(this));
+
         // API for listing clip folders and renaming videos
         this.app.get('/api/clips/list-folders', this.handleListClipFolders.bind(this));
         this.app.post('/api/clips/rename-videos', this.handleRenameVideos.bind(this));
@@ -608,6 +611,60 @@ export class SakugaDownAndClipGen {
             res.json({ success: true, message: 'Clip eliminado correctamente' });
         } catch (error: any) {
             console.error('Error al eliminar clip:', error);
+            res.status(500).json({ error: error.message });
+        }
+    }
+
+    /**
+     * Maneja la solicitud para eliminar un video descargado
+     */
+    private async handlePostDeleteVideo(req: express.Request, res: express.Response): Promise<void> {
+        try {
+            const { videoPath } = req.body;
+
+            if (!videoPath) {
+                res.status(400).json({ error: 'Se requiere la ruta del video a eliminar' });
+                return;
+            }
+
+            const fullPath = path.join(this.downloadDirectory, videoPath);
+            console.log(`Intentando eliminar video: ${fullPath}`);
+
+            if (!fs.existsSync(fullPath)) {
+                res.status(404).json({ error: 'Video no encontrado' });
+                return;
+            }
+
+            const normalizedDir = path.normalize(this.downloadDirectory);
+            const normalizedFullPath = path.normalize(fullPath);
+
+            if (!normalizedFullPath.startsWith(normalizedDir)) {
+                res.status(403).json({ error: 'Acceso denegado: ruta de archivo no permitida' });
+                return;
+            }
+
+            fs.unlinkSync(fullPath);
+            console.log(`Video eliminado: ${videoPath}`);
+
+            const videoDir = path.dirname(fullPath);
+            if (fs.existsSync(videoDir) && videoDir !== this.downloadDirectory) {
+                const remaining = fs.readdirSync(videoDir);
+                if (remaining.length === 0) {
+                    try {
+                        fs.rmdirSync(videoDir);
+                        console.log(`Carpeta vacía eliminada: ${videoDir}`);
+                    } catch (e) {
+                        console.warn(`No se pudo eliminar la carpeta vacía: ${videoDir}`, e);
+                    }
+                }
+            }
+
+            const downloads = this.getDirectoryContents(this.downloadDirectory);
+            this.io.emit('directoriesUpdated', { type: 'downloads', contents: downloads });
+
+            res.json({ success: true, message: 'Video eliminado correctamente' });
+        } catch (error: any) {
+            console.error('Error al eliminar video:', error);
             res.status(500).json({ error: error.message });
         }
     }
