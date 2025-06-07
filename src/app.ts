@@ -1,14 +1,19 @@
-import express from 'express';
+import express, { Request } from 'express';
 import multer from 'multer';
 import { Downloader } from './downloader';
-import { ClipGenerator, FFMPEG_PATH, FFPROBE_PATH } from './clipGenerator'; // Assuming FFMPEG_PATH and FFPROBE_PATH are exported
-import { AudioAnalyzer } from '../audioAnalyzer';
-import { BeatSyncGenerator } from '../beatSyncGenerator';
+import { ClipGenerator } from './clipGenerator';
+import { AudioAnalyzer } from './audioAnalyzer';
+import { BeatSyncGenerator } from './beatSyncGenerator';
 import * as path from 'path';
 import * as fs from 'fs';
 import http from 'http';
 import { Server, Socket } from 'socket.io';
 import { spawn } from 'child_process';
+
+// Interface for requests with file uploads
+interface RequestWithFile extends Request {
+    file?: Express.Multer.File;
+}
 
 export class SakugaDownAndClipGen {
     private downloader: Downloader;
@@ -24,8 +29,6 @@ export class SakugaDownAndClipGen {
     private beatSyncGenerator: BeatSyncGenerator;
     private beatSyncedVideosDirectory: string;
     private upload: multer.Multer;
-
-
     constructor(
         downloadDirectory: string = 'output/downloads',
         clipDirectory: string = 'output/clips',
@@ -35,11 +38,14 @@ export class SakugaDownAndClipGen {
     ) {
         this.downloader = new Downloader('https://www.sakugabooru.com', downloadDirectory);
         this.clipGenerator = new ClipGenerator(clipDirectory); // FFMPEG_PATH and FFPROBE_PATH are resolved within ClipGenerator
-        this.audioAnalyzer = new AudioAnalyzer();
+
+        // Define FFMPEG paths locally
+        const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
+        const FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
+
+        this.audioAnalyzer = new AudioAnalyzer(FFMPEG_PATH);
         this.beatSyncedVideosDirectory = beatSyncedVideosDirectory;
-        // Ensure FFMPEG_PATH and FFPROBE_PATH are correctly resolved here.
-        // For this example, we'll assume they are imported from clipGenerator or available globally.
-        // If they are instance members of clipGenerator, you might need to pass them differently or make them static/exported.
+
         this.beatSyncGenerator = new BeatSyncGenerator(FFMPEG_PATH, FFPROBE_PATH, this.beatSyncedVideosDirectory);
         this.port = port;
         this.downloadDirectory = downloadDirectory;
@@ -67,14 +73,12 @@ export class SakugaDownAndClipGen {
 
         if (!fs.existsSync(this.beatSyncedVideosDirectory)) {
             fs.mkdirSync(this.beatSyncedVideosDirectory, { recursive: true });
-        }
-
-        // Configure multer
+        }        // Configure multer
         const storage = multer.diskStorage({
-            destination: (req, file, cb) => {
+            destination: (req: Request, file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
                 cb(null, this.tempAudioDirectory);
             },
-            filename: (req, file, cb) => {
+            filename: (req: Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
                 // Generate a unique filename to avoid collisions
                 cb(null, `${Date.now()}-${file.originalname}`);
             }
@@ -920,12 +924,10 @@ export class SakugaDownAndClipGen {
         const clips = this.getDirectoryContents(this.clipDirectory);
         this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
         return resultsMap; // Return the map of results
-    }
-
-    /**
+    }    /**
      * Handles audio analysis requests
      */
-    private async handlePostAudioAnalyze(req: express.Request, res: express.Response): Promise<void> {
+    private async handlePostAudioAnalyze(req: RequestWithFile, res: express.Response): Promise<void> {
         if (!req.file) {
             res.status(400).json({ success: false, error: 'No audio file uploaded.' });
             return;
@@ -989,7 +991,7 @@ export class SakugaDownAndClipGen {
             // Sanitize outputVideoName to prevent path traversal
             const sanitizedOutputVideoName = path.basename(outputVideoName);
             if (sanitizedOutputVideoName !== outputVideoName || !/\.(mp4|webm|mkv)$/i.test(sanitizedOutputVideoName)) {
-                 res.status(400).json({ success: false, error: 'Invalid outputVideoName. It should be a valid filename with .mp4, .webm, or .mkv extension and no path characters.' });
+                res.status(400).json({ success: false, error: 'Invalid outputVideoName. It should be a valid filename with .mp4, .webm, or .mkv extension and no path characters.' });
                 return;
             }
 

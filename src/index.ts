@@ -93,6 +93,8 @@ yargs(hideBin(process.argv))
             const app = new SakugaDownAndClipGen(
                 argv['download-dir'] as string,
                 argv['clips-dir'] as string,
+                'output/temp_audio',  // tempAudioDirectory (using default)
+                'output/beat_synced_videos',  // beatSyncedVideosDirectory (using default)
                 argv.port as number
             );
             app.startServer();
