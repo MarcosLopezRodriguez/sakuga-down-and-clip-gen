@@ -201,7 +201,8 @@ export class SakugaDownAndClipGen {
     }
 
     private handleGetClips(req: express.Request, res: express.Response): void {
-        const clips = this.getDirectoryContents(this.clipDirectory);
+        // Only return video files to avoid showing directories or full videos
+        const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
         res.json(clips);
     }
 
@@ -360,7 +361,7 @@ export class SakugaDownAndClipGen {
             await processDirectory(videosDirectory);
 
             // Notificar la actualización de la lista de clips
-            const clips = this.getDirectoryContents(this.clipDirectory);
+            const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
             this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
 
             res.json({ success: true, results });
@@ -601,7 +602,7 @@ export class SakugaDownAndClipGen {
             }
 
             // Actualizar la lista de clips y notificar a los clientes
-            const clips = this.getDirectoryContents(this.clipDirectory);
+            const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
             this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
 
             res.json({ success: true, message: 'Clip eliminado correctamente' });
@@ -921,7 +922,7 @@ export class SakugaDownAndClipGen {
             throw error; // Re-throw the error to be handled by the caller
         }
         // Notificar la actualización de la lista de clips
-        const clips = this.getDirectoryContents(this.clipDirectory);
+        const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
         this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
         return resultsMap; // Return the map of results
     }    /**

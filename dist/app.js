@@ -61,11 +61,11 @@ class SakugaDownAndClipGen {
     constructor(downloadDirectory = 'output/downloads', clipDirectory = 'output/clips', tempAudioDirectory = 'output/temp_audio', beatSyncedVideosDirectory = 'output/beat_synced_videos', port = 3000) {
         this.downloader = new downloader_1.Downloader('https://www.sakugabooru.com', downloadDirectory);
         this.clipGenerator = new clipGenerator_1.ClipGenerator(clipDirectory); // FFMPEG_PATH and FFPROBE_PATH are resolved within ClipGenerator
-        this.audioAnalyzer = new audioAnalyzer_1.AudioAnalyzer();
-        this.beatSyncedVideosDirectory = beatSyncedVideosDirectory;
         // Define FFMPEG paths locally
         const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
         const FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
+        this.audioAnalyzer = new audioAnalyzer_1.AudioAnalyzer(FFMPEG_PATH);
+        this.beatSyncedVideosDirectory = beatSyncedVideosDirectory;
         this.beatSyncGenerator = new beatSyncGenerator_1.BeatSyncGenerator(FFMPEG_PATH, FFPROBE_PATH, this.beatSyncedVideosDirectory);
         this.port = port;
         this.downloadDirectory = downloadDirectory;
@@ -190,7 +190,8 @@ class SakugaDownAndClipGen {
         res.json(downloads);
     }
     handleGetClips(req, res) {
-        const clips = this.getDirectoryContents(this.clipDirectory);
+        // Only return video files to avoid showing directories or full videos
+        const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
         res.json(clips);
     }
     handlePostDownload(req, res) {
@@ -335,7 +336,7 @@ class SakugaDownAndClipGen {
                 });
                 yield processDirectory(videosDirectory);
                 // Notificar la actualización de la lista de clips
-                const clips = this.getDirectoryContents(this.clipDirectory);
+                const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
                 this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
                 res.json({ success: true, results });
             }
@@ -546,7 +547,7 @@ class SakugaDownAndClipGen {
                     }
                 }
                 // Actualizar la lista de clips y notificar a los clientes
-                const clips = this.getDirectoryContents(this.clipDirectory);
+                const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
                 this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
                 res.json({ success: true, message: 'Clip eliminado correctamente' });
             }
@@ -805,7 +806,7 @@ class SakugaDownAndClipGen {
                 throw error; // Re-throw the error to be handled by the caller
             }
             // Notificar la actualización de la lista de clips
-            const clips = this.getDirectoryContents(this.clipDirectory);
+            const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
             this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
             return resultsMap; // Return the map of results
         });
