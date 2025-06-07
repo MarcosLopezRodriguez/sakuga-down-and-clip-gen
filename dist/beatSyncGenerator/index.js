@@ -132,6 +132,7 @@ class BeatSyncGenerator {
                 .sort((a, b) => b.size - a.size)
                 .map(obj => obj.path);
             let clipIndex = 0;
+            let totalVideoDuration = 0;
             const actualAudioDuration = audioEndTime - audioStartTime;
             if (actualAudioDuration <= 0) {
                 throw new Error('Audio end time must be greater than audio start time.');
@@ -180,6 +181,7 @@ class BeatSyncGenerator {
                     // Round to 3 decimal places to avoid issues with ffmpeg
                     sourceStartTimeForCut = parseFloat(sourceStartTimeForCut.toFixed(3));
                     segmentDuration = parseFloat(segmentDuration.toFixed(3));
+                    const usedDuration = segmentDuration;
                     const tempSegmentPath = path.join(this.tempSegmentDirectory, `segment_${i}_${Date.now()}.mp4`);
                     const ffmpegArgs = [
                         '-i', selectedSourceVideo,
@@ -202,6 +204,7 @@ class BeatSyncGenerator {
                         process.on('close', (code) => {
                             if (code === 0) {
                                 tempSegmentPaths.push(tempSegmentPath);
+                                totalVideoDuration += usedDuration;
                                 resolve();
                             }
                             else {
@@ -213,6 +216,43 @@ class BeatSyncGenerator {
                             console.error(`FFmpeg process error (segment ${i}): ${err.message}`);
                             reject(new Error(`Failed to start FFmpeg process for segment ${i}: ${err.message}`));
                         });
+                    });
+                }
+                while (totalVideoDuration + 0.01 < actualAudioDuration) {
+                    const remaining = actualAudioDuration - totalVideoDuration;
+                    const fillerClip = sourceVideos[clipIndex % sourceVideos.length];
+                    clipIndex++;
+                    const clipDur = yield this._getVideoDuration(fillerClip);
+                    const fillDuration = Math.min(remaining, clipDur);
+                    const fillerPath = path.join(this.tempSegmentDirectory, `fill_${Date.now()}_${clipIndex}.mp4`);
+                    const fillerArgs = [
+                        '-i', fillerClip,
+                        '-t', fillDuration.toString(),
+                        '-an',
+                        '-c:v', 'libx264',
+                        '-preset', 'medium',
+                        '-crf', '23',
+                        '-pix_fmt', 'yuv420p',
+                        '-r', '30',
+                        '-y',
+                        fillerPath
+                    ];
+                    yield new Promise((resolve, reject) => {
+                        const p = (0, child_process_1.spawn)(this.ffmpegPath, fillerArgs);
+                        let stderr = '';
+                        p.stderr.on('data', d => stderr += d.toString());
+                        p.on('close', code => {
+                            if (code === 0) {
+                                tempSegmentPaths.push(fillerPath);
+                                totalVideoDuration += fillDuration;
+                                resolve();
+                            }
+                            else {
+                                console.error(`FFmpeg stderr (filler): ${stderr}`);
+                                reject(new Error(`FFmpeg (filler) exited with code ${code}.`));
+                            }
+                        });
+                        p.on('error', err => reject(err));
                     });
                 }
                 if (tempSegmentPaths.length === 0) {
