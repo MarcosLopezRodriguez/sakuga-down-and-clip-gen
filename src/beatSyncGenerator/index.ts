@@ -183,6 +183,7 @@ export class BeatSyncGenerator {
                     '-preset', 'medium', // Balance between speed and quality
                     '-crf', '23', // Constant Rate Factor (quality, lower is better)
                     '-pix_fmt', 'yuv420p', // Common pixel format
+                    '-r', '30', // Force constant framerate
                     '-y', // Overwrite output files without asking
                     tempSegmentPath
                 ];
@@ -236,6 +237,7 @@ export class BeatSyncGenerator {
                 '-preset', 'medium',
                 '-crf', '23',
                 '-pix_fmt', 'yuv420p',
+                '-r', '30',
                 '-y', // Overwrite output
                 tempConcatVideoPath
             ];
@@ -287,7 +289,11 @@ export class BeatSyncGenerator {
             const mergeArgs = [
                 '-i', tempConcatVideoPath,
                 '-i', audioSegmentPath,
-                '-c:v', 'copy',
+                '-c:v', 'libx264',
+                '-preset', 'medium',
+                '-crf', '23',
+                '-pix_fmt', 'yuv420p',
+                '-r', '30',
                 '-c:a', 'aac',
                 '-t', actualAudioDuration.toString(),
                 '-shortest',
