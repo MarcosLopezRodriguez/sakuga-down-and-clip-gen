@@ -1,11 +1,19 @@
-import express from 'express';
+import express, { Request } from 'express';
+import multer from 'multer';
 import { Downloader } from './downloader';
 import { ClipGenerator } from './clipGenerator';
+import { AudioAnalyzer } from './audioAnalyzer';
+import { BeatSyncGenerator } from './beatSyncGenerator';
 import * as path from 'path';
 import * as fs from 'fs';
 import http from 'http';
 import { Server, Socket } from 'socket.io';
 import { spawn } from 'child_process';
+
+// Interface for requests with file uploads
+interface RequestWithFile extends Request {
+    file?: Express.Multer.File;
+}
 
 export class SakugaDownAndClipGen {
     private downloader: Downloader;
@@ -16,17 +24,33 @@ export class SakugaDownAndClipGen {
     private port: number;
     private downloadDirectory: string;
     private clipDirectory: string;
-
+    private tempAudioDirectory: string;
+    private audioAnalyzer: AudioAnalyzer;
+    private beatSyncGenerator: BeatSyncGenerator;
+    private beatSyncedVideosDirectory: string;
+    private upload: multer.Multer;
     constructor(
         downloadDirectory: string = 'output/downloads',
         clipDirectory: string = 'output/clips',
+        tempAudioDirectory: string = 'output/temp_audio',
+        beatSyncedVideosDirectory: string = 'output/beat_synced_videos',
         port: number = 3000
     ) {
         this.downloader = new Downloader('https://www.sakugabooru.com', downloadDirectory);
-        this.clipGenerator = new ClipGenerator(clipDirectory);
+        this.clipGenerator = new ClipGenerator(clipDirectory); // FFMPEG_PATH and FFPROBE_PATH are resolved within ClipGenerator
+
+        // Define FFMPEG paths locally
+        const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
+        const FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
+
+        this.audioAnalyzer = new AudioAnalyzer(FFMPEG_PATH);
+        this.beatSyncedVideosDirectory = beatSyncedVideosDirectory;
+
+        this.beatSyncGenerator = new BeatSyncGenerator(FFMPEG_PATH, FFPROBE_PATH, this.beatSyncedVideosDirectory);
         this.port = port;
         this.downloadDirectory = downloadDirectory;
         this.clipDirectory = clipDirectory;
+        this.tempAudioDirectory = tempAudioDirectory;
         this.app = express();
         this.server = http.createServer(this.app);
         this.io = new Server(this.server);
@@ -42,6 +66,39 @@ export class SakugaDownAndClipGen {
         if (!fs.existsSync(clipDirectory)) {
             fs.mkdirSync(clipDirectory, { recursive: true });
         }
+
+        if (!fs.existsSync(this.tempAudioDirectory)) {
+            fs.mkdirSync(this.tempAudioDirectory, { recursive: true });
+        }
+
+        if (!fs.existsSync(this.beatSyncedVideosDirectory)) {
+            fs.mkdirSync(this.beatSyncedVideosDirectory, { recursive: true });
+        }        // Configure multer
+        const storage = multer.diskStorage({
+            destination: (req: Request, file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
+                cb(null, this.tempAudioDirectory);
+            },
+            filename: (req: Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
+                // Generate a unique filename to avoid collisions
+                cb(null, `${Date.now()}-${file.originalname}`);
+            }
+        });
+
+        const fileFilter = (req: any, file: any, cb: any) => {
+            if (file.mimetype === 'audio/mpeg' || file.mimetype === 'audio/wav' || file.mimetype === 'audio/x-wav') {
+                cb(null, true);
+            } else {
+                cb(new Error('Invalid file type. Only MP3 and WAV are allowed.'), false);
+            }
+        };
+
+        this.upload = multer({
+            storage: storage,
+            limits: {
+                fileSize: 1024 * 1024 * 50 // 50MB limit
+            },
+            fileFilter: fileFilter
+        });
 
         this.setupExpressApp();
     }
@@ -91,6 +148,7 @@ export class SakugaDownAndClipGen {
         // Servir los videos y clips descargados
         this.app.use('/downloads', express.static(this.downloadDirectory));
         this.app.use('/clips', express.static(this.clipDirectory));
+        this.app.use('/beat_synced_videos', express.static(this.beatSyncedVideosDirectory));
 
         // Endpoint para la página principal
         this.app.get('/', this.handleGetHome.bind(this));
@@ -124,6 +182,12 @@ export class SakugaDownAndClipGen {
         // API for listing clip folders and renaming videos
         this.app.get('/api/clips/list-folders', this.handleListClipFolders.bind(this));
         this.app.post('/api/clips/rename-videos', this.handleRenameVideos.bind(this));
+
+        // API for audio analysis
+        this.app.post('/api/audio/analyze', this.upload.single('audioFile'), this.handlePostAudioAnalyze.bind(this));
+
+        // API for beat-matched video generation
+        this.app.post('/api/video/generate-beat-matched', this.handlePostGenerateBeatMatchedVideo.bind(this));
     }
 
     // Handlers para las rutas de Express
@@ -860,6 +924,97 @@ export class SakugaDownAndClipGen {
         const clips = this.getDirectoryContents(this.clipDirectory);
         this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
         return resultsMap; // Return the map of results
+    }    /**
+     * Handles audio analysis requests
+     */
+    private async handlePostAudioAnalyze(req: RequestWithFile, res: express.Response): Promise<void> {
+        if (!req.file) {
+            res.status(400).json({ success: false, error: 'No audio file uploaded.' });
+            return;
+        }
+
+        const audioFilePath = req.file.path;
+
+        try {
+            console.log(`Analyzing audio file: ${audioFilePath}`);
+            const analysisResult = await this.audioAnalyzer.analyzeBeats(audioFilePath);
+            res.json({ success: true, analysis: analysisResult });
+        } catch (error: any) {
+            console.error(`Error analyzing audio file ${audioFilePath}:`, error);
+            res.status(500).json({ success: false, error: `Failed to analyze audio: ${error.message}` });
+        } finally {
+            // Delete the temporary audio file
+            fs.unlink(audioFilePath, (err) => {
+                if (err) {
+                    console.error(`Failed to delete temporary audio file ${audioFilePath}:`, err);
+                } else {
+                    console.log(`Temporary audio file ${audioFilePath} deleted.`);
+                }
+            });
+        }
+    }
+
+    /**
+     * Handles beat-matched video generation requests
+     */
+    private async handlePostGenerateBeatMatchedVideo(req: express.Request, res: express.Response): Promise<void> {
+        try {
+            const {
+                beatTimestamps, // array of numbers
+                audioStartTime, // number
+                audioEndTime,   // number
+                sourceClipFolderPaths, // array of strings (relative paths)
+                outputVideoName // string
+            } = req.body;
+
+            // Validation
+            if (!beatTimestamps || !Array.isArray(beatTimestamps) || beatTimestamps.some(isNaN)) {
+                res.status(400).json({ success: false, error: 'Invalid or missing beatTimestamps. Must be an array of numbers.' });
+                return;
+            }
+            if (typeof audioStartTime !== 'number' || typeof audioEndTime !== 'number') {
+                res.status(400).json({ success: false, error: 'Invalid or missing audioStartTime/audioEndTime. Must be numbers.' });
+                return;
+            }
+            if (audioEndTime <= audioStartTime) {
+                res.status(400).json({ success: false, error: 'audioEndTime must be greater than audioStartTime.' });
+                return;
+            }
+            if (!sourceClipFolderPaths || !Array.isArray(sourceClipFolderPaths) || sourceClipFolderPaths.some(p => typeof p !== 'string')) {
+                res.status(400).json({ success: false, error: 'Invalid or missing sourceClipFolderPaths. Must be an array of strings.' });
+                return;
+            }
+            if (!outputVideoName || typeof outputVideoName !== 'string' || outputVideoName.trim() === '') {
+                res.status(400).json({ success: false, error: 'Invalid or missing outputVideoName. Must be a non-empty string.' });
+                return;
+            }
+            // Sanitize outputVideoName to prevent path traversal
+            const sanitizedOutputVideoName = path.basename(outputVideoName);
+            if (sanitizedOutputVideoName !== outputVideoName || !/\.(mp4|webm|mkv)$/i.test(sanitizedOutputVideoName)) {
+                res.status(400).json({ success: false, error: 'Invalid outputVideoName. It should be a valid filename with .mp4, .webm, or .mkv extension and no path characters.' });
+                return;
+            }
+
+            console.log(`Generating beat-matched video: ${sanitizedOutputVideoName}`);
+            // this.clipDirectory is the base for sourceClipFolderPaths
+            const generatedVideoPath = await this.beatSyncGenerator.generateVideoFromAudioBeats(
+                beatTimestamps,
+                audioStartTime,
+                audioEndTime,
+                sourceClipFolderPaths,
+                sanitizedOutputVideoName,
+                this.clipDirectory // base directory for the relative sourceClipFolderPaths
+            );
+
+            // Make path relative to the server's static serving for client access
+            const relativeVideoPath = path.join('beat_synced_videos', sanitizedOutputVideoName).replace(/\\/g, '/');
+
+            res.json({ success: true, videoPath: relativeVideoPath, absoluteVideoPath: generatedVideoPath });
+
+        } catch (error: any) {
+            console.error('Error generating beat-matched video:', error);
+            res.status(500).json({ success: false, error: `Failed to generate beat-matched video: ${error.message}` });
+        }
     }
 }
 

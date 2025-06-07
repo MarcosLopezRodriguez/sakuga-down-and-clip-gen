@@ -47,19 +47,30 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SakugaDownAndClipGen = void 0;
 const express_1 = __importDefault(require("express"));
+const multer_1 = __importDefault(require("multer"));
 const downloader_1 = require("./downloader");
 const clipGenerator_1 = require("./clipGenerator");
+const audioAnalyzer_1 = require("./audioAnalyzer");
+const beatSyncGenerator_1 = require("./beatSyncGenerator");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
+const child_process_1 = require("child_process");
 class SakugaDownAndClipGen {
-    constructor(downloadDirectory = 'output/downloads', clipDirectory = 'output/clips', port = 3000) {
+    constructor(downloadDirectory = 'output/downloads', clipDirectory = 'output/clips', tempAudioDirectory = 'output/temp_audio', beatSyncedVideosDirectory = 'output/beat_synced_videos', port = 3000) {
         this.downloader = new downloader_1.Downloader('https://www.sakugabooru.com', downloadDirectory);
-        this.clipGenerator = new clipGenerator_1.ClipGenerator(clipDirectory);
+        this.clipGenerator = new clipGenerator_1.ClipGenerator(clipDirectory); // FFMPEG_PATH and FFPROBE_PATH are resolved within ClipGenerator
+        this.audioAnalyzer = new audioAnalyzer_1.AudioAnalyzer();
+        this.beatSyncedVideosDirectory = beatSyncedVideosDirectory;
+        // Define FFMPEG paths locally
+        const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
+        const FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
+        this.beatSyncGenerator = new beatSyncGenerator_1.BeatSyncGenerator(FFMPEG_PATH, FFPROBE_PATH, this.beatSyncedVideosDirectory);
         this.port = port;
         this.downloadDirectory = downloadDirectory;
         this.clipDirectory = clipDirectory;
+        this.tempAudioDirectory = tempAudioDirectory;
         this.app = (0, express_1.default)();
         this.server = http_1.default.createServer(this.app);
         this.io = new socket_io_1.Server(this.server);
@@ -72,6 +83,36 @@ class SakugaDownAndClipGen {
         if (!fs.existsSync(clipDirectory)) {
             fs.mkdirSync(clipDirectory, { recursive: true });
         }
+        if (!fs.existsSync(this.tempAudioDirectory)) {
+            fs.mkdirSync(this.tempAudioDirectory, { recursive: true });
+        }
+        if (!fs.existsSync(this.beatSyncedVideosDirectory)) {
+            fs.mkdirSync(this.beatSyncedVideosDirectory, { recursive: true });
+        } // Configure multer
+        const storage = multer_1.default.diskStorage({
+            destination: (req, file, cb) => {
+                cb(null, this.tempAudioDirectory);
+            },
+            filename: (req, file, cb) => {
+                // Generate a unique filename to avoid collisions
+                cb(null, `${Date.now()}-${file.originalname}`);
+            }
+        });
+        const fileFilter = (req, file, cb) => {
+            if (file.mimetype === 'audio/mpeg' || file.mimetype === 'audio/wav' || file.mimetype === 'audio/x-wav') {
+                cb(null, true);
+            }
+            else {
+                cb(new Error('Invalid file type. Only MP3 and WAV are allowed.'), false);
+            }
+        };
+        this.upload = (0, multer_1.default)({
+            storage: storage,
+            limits: {
+                fileSize: 1024 * 1024 * 50 // 50MB limit
+            },
+            fileFilter: fileFilter
+        });
         this.setupExpressApp();
     }
     /**
@@ -111,6 +152,7 @@ class SakugaDownAndClipGen {
         // Servir los videos y clips descargados
         this.app.use('/downloads', express_1.default.static(this.downloadDirectory));
         this.app.use('/clips', express_1.default.static(this.clipDirectory));
+        this.app.use('/beat_synced_videos', express_1.default.static(this.beatSyncedVideosDirectory));
         // Endpoint para la página principal
         this.app.get('/', this.handleGetHome.bind(this));
         // API para obtener información de los directorios
@@ -131,6 +173,13 @@ class SakugaDownAndClipGen {
         this.app.post('/api/download-and-clip', this.handlePostDownloadAndClip.bind(this));
         // API para eliminar un clip
         this.app.post('/api/delete-clip', this.handlePostDeleteClip.bind(this));
+        // API for listing clip folders and renaming videos
+        this.app.get('/api/clips/list-folders', this.handleListClipFolders.bind(this));
+        this.app.post('/api/clips/rename-videos', this.handleRenameVideos.bind(this));
+        // API for audio analysis
+        this.app.post('/api/audio/analyze', this.upload.single('audioFile'), this.handlePostAudioAnalyze.bind(this));
+        // API for beat-matched video generation
+        this.app.post('/api/video/generate-beat-matched', this.handlePostGenerateBeatMatchedVideo.bind(this));
     }
     // Handlers para las rutas de Express
     handleGetHome(req, res) {
@@ -337,6 +386,121 @@ class SakugaDownAndClipGen {
             catch (error) {
                 res.status(500).json({ error: error.message });
             }
+        });
+    }
+    // Handler for listing subfolders in the clip directory
+    handleListClipFolders(req, res) {
+        const clipsBaseDir = this.clipDirectory; // output/clips
+        if (!fs.existsSync(clipsBaseDir)) {
+            console.log(`Directory ${clipsBaseDir} does not exist.`);
+            res.status(200).json([]); // Return empty array if base directory doesn't exist
+            return;
+        }
+        try {
+            const entries = fs.readdirSync(clipsBaseDir, { withFileTypes: true });
+            const folders = entries
+                .filter(entry => entry.isDirectory())
+                .map(entry => entry.name);
+            res.json(folders);
+        }
+        catch (error) {
+            console.error(`Error reading directory ${clipsBaseDir}:`, error);
+            res.status(500).json({ error: `Failed to list folders in ${clipsBaseDir}` });
+        }
+    }
+    // Handler for renaming videos using the Python script
+    handleRenameVideos(req, res) {
+        const { selectedFolders, outputSubfolder } = req.body;
+        if (!selectedFolders || !Array.isArray(selectedFolders) || selectedFolders.length === 0) {
+            res.status(400).json({
+                status: "error",
+                message: "Invalid request body. 'selectedFolders' is required and must be a non-empty array."
+            });
+            return;
+        }
+        if (!outputSubfolder || typeof outputSubfolder !== 'string' || outputSubfolder.trim() === '') {
+            res.status(400).json({
+                status: "error",
+                message: "Invalid request body. 'outputSubfolder' is required and must be a non-empty string."
+            });
+            return;
+        }
+        const clipsBaseDir = this.clipDirectory; // output/clips
+        const inputDirs = selectedFolders.map(folder => path.join(clipsBaseDir, folder));
+        const outputDir = path.join('output', 'random_names', outputSubfolder.trim()); // output/random_names
+        // Ensure output directory for the script exists, though the script should also handle this
+        try {
+            if (!fs.existsSync(outputDir)) {
+                fs.mkdirSync(outputDir, { recursive: true });
+            }
+        }
+        catch (mkdirError) {
+            console.error(`Error creating output directory ${outputDir}:`, mkdirError);
+            res.status(500).json({
+                status: "error",
+                message: "Failed to create output directory for processed videos.",
+                details: mkdirError.message
+            });
+            return;
+        }
+        // Validate that input directories exist
+        for (const dir of inputDirs) {
+            if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+                res.status(400).json({
+                    status: "error",
+                    message: `Invalid input directory: ${dir}. Folder does not exist or is not a directory.`,
+                });
+                return;
+            }
+        }
+        const pythonScriptPath = path.resolve(__dirname, '../rename_clips.py'); // Script is at project root
+        if (!fs.existsSync(pythonScriptPath)) {
+            console.error(`Python script not found at ${pythonScriptPath}`);
+            res.status(500).json({
+                status: "error",
+                message: "Python script 'rename_clips.py' not found on the server.",
+                details: `Expected at ${pythonScriptPath}`
+            });
+            return;
+        }
+        const scriptArgs = [
+            '--input_dirs', ...inputDirs,
+            '--output_dir', outputDir
+        ];
+        console.log(`Executing script: python ${pythonScriptPath} ${scriptArgs.join(' ')}`);
+        const pythonProcess = (0, child_process_1.spawn)('python', [pythonScriptPath, ...scriptArgs]);
+        let stdoutData = '';
+        let stderrData = '';
+        pythonProcess.stdout.on('data', (data) => {
+            stdoutData += data.toString();
+        });
+        pythonProcess.stderr.on('data', (data) => {
+            stderrData += data.toString();
+        });
+        pythonProcess.on('close', (code) => {
+            console.log(`Python script stdout:\n${stdoutData}`);
+            console.error(`Python script stderr:\n${stderrData}`);
+            if (code === 0) {
+                res.status(200).json({
+                    status: "success",
+                    message: "Videos renamed successfully."
+                });
+            }
+            else {
+                res.status(500).json({
+                    status: "error",
+                    message: "Error processing videos.",
+                    details: stderrData.trim() || `Python script exited with code ${code}`
+                });
+            }
+        });
+        pythonProcess.on('error', (err) => {
+            console.error('Failed to start Python script:', err);
+            res.status(500).json({
+                status: "error",
+                message: "Failed to start video processing script.",
+                details: err.message
+            });
         });
     }
     /**
@@ -597,44 +761,137 @@ class SakugaDownAndClipGen {
      * @returns Mapa de rutas de video a rutas de clips generados
      */
     processVideosDirectoryAndGenerateClips(videosDirectory_1) {
-        return __awaiter(this, arguments, void 0, function* (videosDirectory, sceneOptions = {}) {
-            const resultsMap = new Map();
+        return __awaiter(this, arguments, void 0, function* (videosDirectory, // This parameter is the base directory containing video files or subfolders with videos
+        sceneOptions = {}) {
+            const resultsMap = new Map(); // Initialize a map to store results
             try {
+                // Check if the provided directory exists
                 if (!fs.existsSync(videosDirectory)) {
+                    console.error(`Error: Videos directory does not exist at ${videosDirectory}`);
                     throw new Error(`El directorio de videos no existe: ${videosDirectory}`);
                 }
-                // Leer todos los archivos del directorio
-                const processDirectory = (dirPath) => __awaiter(this, void 0, void 0, function* () {
-                    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+                // Recursive function to process files and subdirectories
+                const processDirectory = (currentDirPath) => __awaiter(this, void 0, void 0, function* () {
+                    const entries = fs.readdirSync(currentDirPath, { withFileTypes: true });
                     for (const entry of entries) {
-                        const fullPath = path.join(dirPath, entry.name);
+                        const fullPath = path.join(currentDirPath, entry.name);
                         if (entry.isDirectory()) {
-                            // Procesar subdirectorios recursivamente
+                            // If entry is a directory, recurse into it
+                            console.log(`Scanning subdirectory: ${fullPath}`);
                             yield processDirectory(fullPath);
                         }
                         else if (entry.isFile() && /\.(mp4|webm|mkv)$/i.test(entry.name)) {
-                            // Procesar archivos de video
+                            // If entry is a supported video file, process it
                             console.log(`Procesando video: ${fullPath}`);
-                            let clipPaths;
+                            this.io.emit('clipGenerationStatus', { video: fullPath, status: 'processing' });
+                            let clipPaths; // Array to hold paths of generated clips
+                            // Choose scene detection method based on sceneOptions
                             if (sceneOptions.useFFmpegDetection) {
-                                // Usar FFmpeg para detección de escenas
                                 clipPaths = yield this.clipGenerator.detectScenesWithFFmpegAndGenerateClips(fullPath, sceneOptions);
                             }
                             else {
-                                // Usar PySceneDetect para detección de escenas
                                 clipPaths = yield this.clipGenerator.detectScenesAndGenerateClips(fullPath, sceneOptions);
                             }
-                            resultsMap.set(fullPath, clipPaths);
+                            this.io.emit('clipGenerationStatus', { video: fullPath, status: 'completed', clips: clipPaths.length });
+                            resultsMap.set(fullPath, clipPaths); // Store the result in the map
                         }
                     }
                 });
-                yield processDirectory(videosDirectory);
+                yield processDirectory(videosDirectory); // Start processing from the root videosDirectory
             }
             catch (error) {
-                console.error(`Error procesando directorio de videos:`, error);
-                throw error;
+                console.error(`Error procesando directorio de videos: ${videosDirectory}`, error);
+                this.io.emit('clipGenerationError', { directory: videosDirectory, error: error.message });
+                throw error; // Re-throw the error to be handled by the caller
             }
-            return resultsMap;
+            // Notificar la actualización de la lista de clips
+            const clips = this.getDirectoryContents(this.clipDirectory);
+            this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
+            return resultsMap; // Return the map of results
+        });
+    } /**
+     * Handles audio analysis requests
+     */
+    handlePostAudioAnalyze(req, res) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!req.file) {
+                res.status(400).json({ success: false, error: 'No audio file uploaded.' });
+                return;
+            }
+            const audioFilePath = req.file.path;
+            try {
+                console.log(`Analyzing audio file: ${audioFilePath}`);
+                const analysisResult = yield this.audioAnalyzer.analyzeBeats(audioFilePath);
+                res.json({ success: true, analysis: analysisResult });
+            }
+            catch (error) {
+                console.error(`Error analyzing audio file ${audioFilePath}:`, error);
+                res.status(500).json({ success: false, error: `Failed to analyze audio: ${error.message}` });
+            }
+            finally {
+                // Delete the temporary audio file
+                fs.unlink(audioFilePath, (err) => {
+                    if (err) {
+                        console.error(`Failed to delete temporary audio file ${audioFilePath}:`, err);
+                    }
+                    else {
+                        console.log(`Temporary audio file ${audioFilePath} deleted.`);
+                    }
+                });
+            }
+        });
+    }
+    /**
+     * Handles beat-matched video generation requests
+     */
+    handlePostGenerateBeatMatchedVideo(req, res) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const { beatTimestamps, // array of numbers
+                audioStartTime, // number
+                audioEndTime, // number
+                sourceClipFolderPaths, // array of strings (relative paths)
+                outputVideoName // string
+                 } = req.body;
+                // Validation
+                if (!beatTimestamps || !Array.isArray(beatTimestamps) || beatTimestamps.some(isNaN)) {
+                    res.status(400).json({ success: false, error: 'Invalid or missing beatTimestamps. Must be an array of numbers.' });
+                    return;
+                }
+                if (typeof audioStartTime !== 'number' || typeof audioEndTime !== 'number') {
+                    res.status(400).json({ success: false, error: 'Invalid or missing audioStartTime/audioEndTime. Must be numbers.' });
+                    return;
+                }
+                if (audioEndTime <= audioStartTime) {
+                    res.status(400).json({ success: false, error: 'audioEndTime must be greater than audioStartTime.' });
+                    return;
+                }
+                if (!sourceClipFolderPaths || !Array.isArray(sourceClipFolderPaths) || sourceClipFolderPaths.some(p => typeof p !== 'string')) {
+                    res.status(400).json({ success: false, error: 'Invalid or missing sourceClipFolderPaths. Must be an array of strings.' });
+                    return;
+                }
+                if (!outputVideoName || typeof outputVideoName !== 'string' || outputVideoName.trim() === '') {
+                    res.status(400).json({ success: false, error: 'Invalid or missing outputVideoName. Must be a non-empty string.' });
+                    return;
+                }
+                // Sanitize outputVideoName to prevent path traversal
+                const sanitizedOutputVideoName = path.basename(outputVideoName);
+                if (sanitizedOutputVideoName !== outputVideoName || !/\.(mp4|webm|mkv)$/i.test(sanitizedOutputVideoName)) {
+                    res.status(400).json({ success: false, error: 'Invalid outputVideoName. It should be a valid filename with .mp4, .webm, or .mkv extension and no path characters.' });
+                    return;
+                }
+                console.log(`Generating beat-matched video: ${sanitizedOutputVideoName}`);
+                // this.clipDirectory is the base for sourceClipFolderPaths
+                const generatedVideoPath = yield this.beatSyncGenerator.generateVideoFromAudioBeats(beatTimestamps, audioStartTime, audioEndTime, sourceClipFolderPaths, sanitizedOutputVideoName, this.clipDirectory // base directory for the relative sourceClipFolderPaths
+                );
+                // Make path relative to the server's static serving for client access
+                const relativeVideoPath = path.join('beat_synced_videos', sanitizedOutputVideoName).replace(/\\/g, '/');
+                res.json({ success: true, videoPath: relativeVideoPath, absoluteVideoPath: generatedVideoPath });
+            }
+            catch (error) {
+                console.error('Error generating beat-matched video:', error);
+                res.status(500).json({ success: false, error: `Failed to generate beat-matched video: ${error.message}` });
+            }
         });
     }
 }
