@@ -879,7 +879,16 @@ function displayDownloadedVideos(videos) {
                     openVideoPlayer(`/downloads/${video.path}`, video.name);
                 });
 
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'btn btn-sm btn-danger ms-2';
+                deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteVideo(video.path);
+                });
+
                 videoItem.appendChild(playBtn);
+                videoItem.appendChild(deleteBtn);
                 videoList.appendChild(videoItem);
             });
 
@@ -905,6 +914,15 @@ function displayDownloadedVideos(videos) {
                 videoPreview.className = 'video-thumbnail d-flex justify-content-center align-items-center bg-dark text-white';
                 videoPreview.innerHTML = '<i class="bi bi-play-circle fs-1"></i>';
 
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'delete-video-btn';
+                deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+                deleteBtn.title = 'Eliminar video';
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteVideo(video.path);
+                });
+
                 const videoCardBody = document.createElement('div');
                 videoCardBody.className = 'card-body';
 
@@ -919,6 +937,7 @@ function displayDownloadedVideos(videos) {
                 videoCardBody.appendChild(videoTitle);
                 videoCardBody.appendChild(videoInfo);
                 videoCard.appendChild(videoPreview);
+                videoCard.appendChild(deleteBtn);
                 videoCard.appendChild(videoCardBody);
                 videoCol.appendChild(videoCard);
                 container.appendChild(videoCol);
@@ -1327,6 +1346,45 @@ async function deleteClip(clipPath, elementId) {
 
     } catch (error) {
         console.error('Error al eliminar clip:', error);
+        alert(`Error: ${error.message}`);
+    }
+}
+
+// Function to delete a downloaded video
+async function deleteVideo(videoPath) {
+    try {
+        const response = await fetch('/api/delete-video', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ videoPath })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Error al eliminar el video');
+        }
+
+        console.log(`Video eliminado: ${videoPath}`);
+
+        await loadVideoLists();
+
+        const statusEl = document.getElementById('downloadStatus');
+        if (statusEl) {
+            const originalText = statusEl.textContent;
+            statusEl.textContent = 'Video eliminado exitosamente';
+            statusEl.style.color = '#28a745';
+
+            setTimeout(() => {
+                statusEl.textContent = originalText;
+                statusEl.style.color = '';
+            }, 2000);
+        }
+
+    } catch (error) {
+        console.error('Error al eliminar video:', error);
         alert(`Error: ${error.message}`);
     }
 }
