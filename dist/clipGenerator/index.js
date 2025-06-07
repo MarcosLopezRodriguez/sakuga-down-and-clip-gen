@@ -67,11 +67,12 @@ function isExecutableAvailable(executableName) {
 }
 // Intentar buscar FFmpeg de manera más exhaustiva
 function findFFmpegPath() {
-    // Verificar si está en el PATH
+    // Verificar si ffmpeg está disponible en el PATH
     if (isExecutableAvailable('ffmpeg')) {
         try {
-            const output = (0, child_process_2.execSync)('where ffmpeg', { encoding: 'utf8' }).trim();
-            const paths = output.split('\n');
+            const cmd = process.platform === 'win32' ? 'where ffmpeg' : 'which ffmpeg';
+            const output = (0, child_process_2.execSync)(cmd, { encoding: 'utf8' }).trim();
+            const paths = output.split(/\r?\n/);
             if (paths.length > 0) {
                 return paths[0].trim();
             }
