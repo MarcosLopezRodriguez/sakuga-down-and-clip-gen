@@ -58,7 +58,7 @@ const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
 const child_process_1 = require("child_process");
 class SakugaDownAndClipGen {
-    constructor(downloadDirectory = 'output/downloads', clipDirectory = 'output/clips', tempAudioDirectory = 'output/temp_audio', beatSyncedVideosDirectory = 'output/beat_synced_videos', port = 3000) {
+    constructor(downloadDirectory = 'output/downloads', clipDirectory = 'output/clips', randomNamesDirectory = 'output/random_names', tempAudioDirectory = 'output/temp_audio', beatSyncedVideosDirectory = 'output/beat_synced_videos', port = 3000) {
         this.downloader = new downloader_1.Downloader('https://www.sakugabooru.com', downloadDirectory);
         this.clipGenerator = new clipGenerator_1.ClipGenerator(clipDirectory); // FFMPEG_PATH and FFPROBE_PATH are resolved within ClipGenerator
         // Define FFMPEG paths locally
@@ -70,6 +70,7 @@ class SakugaDownAndClipGen {
         this.port = port;
         this.downloadDirectory = downloadDirectory;
         this.clipDirectory = clipDirectory;
+        this.randomNamesDirectory = randomNamesDirectory;
         this.tempAudioDirectory = tempAudioDirectory;
         this.app = (0, express_1.default)();
         this.server = http_1.default.createServer(this.app);
@@ -82,6 +83,9 @@ class SakugaDownAndClipGen {
         }
         if (!fs.existsSync(clipDirectory)) {
             fs.mkdirSync(clipDirectory, { recursive: true });
+        }
+        if (!fs.existsSync(randomNamesDirectory)) {
+            fs.mkdirSync(randomNamesDirectory, { recursive: true });
         }
         if (!fs.existsSync(this.tempAudioDirectory)) {
             fs.mkdirSync(this.tempAudioDirectory, { recursive: true });
@@ -177,6 +181,7 @@ class SakugaDownAndClipGen {
         this.app.post('/api/delete-video', this.handlePostDeleteVideo.bind(this));
         // API for listing clip folders and renaming videos
         this.app.get('/api/clips/list-folders', this.handleListClipFolders.bind(this));
+        this.app.get('/api/random-names/list-folders', this.handleListRandomNameFolders.bind(this));
         this.app.post('/api/clips/rename-videos', this.handleRenameVideos.bind(this));
         // API for audio analysis
         this.app.post('/api/audio/analyze', this.upload.single('audioFile'), this.handlePostAudioAnalyze.bind(this));
@@ -411,6 +416,22 @@ class SakugaDownAndClipGen {
             res.status(500).json({ error: `Failed to list folders in ${clipsBaseDir}` });
         }
     }
+    handleListRandomNameFolders(req, res) {
+        const baseDir = this.randomNamesDirectory;
+        if (!fs.existsSync(baseDir)) {
+            res.status(200).json([]);
+            return;
+        }
+        try {
+            const entries = fs.readdirSync(baseDir, { withFileTypes: true });
+            const folders = entries.filter(e => e.isDirectory()).map(e => e.name);
+            res.json(folders);
+        }
+        catch (error) {
+            console.error(`Error reading directory ${baseDir}:`, error);
+            res.status(500).json({ error: `Failed to list folders in ${baseDir}` });
+        }
+    }
     // Handler for renaming videos using the Python script
     handleRenameVideos(req, res) {
         const { selectedFolders, outputSubfolder } = req.body;
@@ -430,7 +451,7 @@ class SakugaDownAndClipGen {
         }
         const clipsBaseDir = this.clipDirectory; // output/clips
         const inputDirs = selectedFolders.map(folder => path.join(clipsBaseDir, folder));
-        const outputDir = path.join('output', 'random_names', outputSubfolder.trim()); // output/random_names
+        const outputDir = path.join(this.randomNamesDirectory, outputSubfolder.trim());
         // Ensure output directory for the script exists, though the script should also handle this
         try {
             if (!fs.existsSync(outputDir)) {
@@ -873,22 +894,11 @@ class SakugaDownAndClipGen {
             try {
                 console.log(`Analyzing audio file: ${audioFilePath}`);
                 const analysisResult = yield this.audioAnalyzer.analyzeBeats(audioFilePath);
-                res.json({ success: true, analysis: analysisResult });
+                res.json({ success: true, analysis: analysisResult, audioFileName: path.basename(audioFilePath) });
             }
             catch (error) {
                 console.error(`Error analyzing audio file ${audioFilePath}:`, error);
                 res.status(500).json({ success: false, error: `Failed to analyze audio: ${error.message}` });
-            }
-            finally {
-                // Delete the temporary audio file
-                fs.unlink(audioFilePath, (err) => {
-                    if (err) {
-                        console.error(`Failed to delete temporary audio file ${audioFilePath}:`, err);
-                    }
-                    else {
-                        console.log(`Temporary audio file ${audioFilePath} deleted.`);
-                    }
-                });
             }
         });
     }
@@ -902,7 +912,8 @@ class SakugaDownAndClipGen {
                 audioStartTime, // number
                 audioEndTime, // number
                 sourceClipFolderPaths, // array of strings (relative paths)
-                outputVideoName // string
+                outputVideoName, // string
+                audioFileName // string (name of analyzed audio file)
                  } = req.body;
                 // Validation
                 if (!beatTimestamps || !Array.isArray(beatTimestamps) || beatTimestamps.some(isNaN)) {
@@ -925,6 +936,10 @@ class SakugaDownAndClipGen {
                     res.status(400).json({ success: false, error: 'Invalid or missing outputVideoName. Must be a non-empty string.' });
                     return;
                 }
+                if (!audioFileName || typeof audioFileName !== 'string') {
+                    res.status(400).json({ success: false, error: 'Invalid or missing audioFileName.' });
+                    return;
+                }
                 // Sanitize outputVideoName to prevent path traversal
                 const sanitizedOutputVideoName = path.basename(outputVideoName);
                 if (sanitizedOutputVideoName !== outputVideoName || !/\.(mp4|webm|mkv)$/i.test(sanitizedOutputVideoName)) {
@@ -933,11 +948,21 @@ class SakugaDownAndClipGen {
                 }
                 console.log(`Generating beat-matched video: ${sanitizedOutputVideoName}`);
                 // this.clipDirectory is the base for sourceClipFolderPaths
-                const generatedVideoPath = yield this.beatSyncGenerator.generateVideoFromAudioBeats(beatTimestamps, audioStartTime, audioEndTime, sourceClipFolderPaths, sanitizedOutputVideoName, this.clipDirectory // base directory for the relative sourceClipFolderPaths
-                );
+                const sanitizedAudioFileName = path.basename(audioFileName);
+                const audioFilePath = path.join(this.tempAudioDirectory, sanitizedAudioFileName);
+                if (!fs.existsSync(audioFilePath)) {
+                    res.status(400).json({ success: false, error: 'Audio file not found on server.' });
+                    return;
+                }
+                const generatedVideoPath = yield this.beatSyncGenerator.generateVideoFromAudioBeats(beatTimestamps, audioStartTime, audioEndTime, sourceClipFolderPaths, sanitizedOutputVideoName, this.randomNamesDirectory, audioFilePath);
                 // Make path relative to the server's static serving for client access
                 const relativeVideoPath = path.join('beat_synced_videos', sanitizedOutputVideoName).replace(/\\/g, '/');
                 res.json({ success: true, videoPath: relativeVideoPath, absoluteVideoPath: generatedVideoPath });
+                fs.unlink(audioFilePath, (err) => {
+                    if (err) {
+                        console.error(`Failed to delete temporary audio file ${audioFilePath}:`, err);
+                    }
+                });
             }
             catch (error) {
                 console.error('Error generating beat-matched video:', error);

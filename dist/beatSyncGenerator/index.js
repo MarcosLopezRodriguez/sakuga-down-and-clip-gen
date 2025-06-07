@@ -120,12 +120,19 @@ class BeatSyncGenerator {
         // Remove duplicates that might arise from recursive calls with overlapping paths
         return [...new Set(videoFiles)];
     }
-    generateVideoFromAudioBeats(beatTimestamps, audioStartTime, audioEndTime, sourceClipFolderPaths, outputVideoName, baseClipDirectory) {
+    generateVideoFromAudioBeats(beatTimestamps, audioStartTime, audioEndTime, sourceClipFolderPaths, outputVideoName, baseClipDirectory, audioFilePath) {
         return __awaiter(this, void 0, void 0, function* () {
-            const sourceVideos = this._listSourceVideos(sourceClipFolderPaths, baseClipDirectory);
+            let sourceVideos = this._listSourceVideos(sourceClipFolderPaths, baseClipDirectory);
             if (sourceVideos.length === 0) {
                 throw new Error('No source video clips found in the specified folders.');
             }
+            // Prefer longer clips first as a naive "best" metric
+            sourceVideos = sourceVideos
+                .map(p => ({ path: p, size: fs.statSync(p).size }))
+                .sort((a, b) => b.size - a.size)
+                .map(obj => obj.path);
+            let clipIndex = 0;
+            let totalVideoDuration = 0;
             const actualAudioDuration = audioEndTime - audioStartTime;
             if (actualAudioDuration <= 0) {
                 throw new Error('Audio end time must be greater than audio start time.');
@@ -144,7 +151,9 @@ class BeatSyncGenerator {
             }
             const tempSegmentPaths = [];
             const concatFilePath = path.join(this.tempSegmentDirectory, 'concat_list.txt');
+            const tempConcatVideoPath = path.join(this.tempSegmentDirectory, `concat_${Date.now()}.mp4`);
             const finalOutputVideoPath = path.join(this.outputDirectory, outputVideoName);
+            let audioSegmentPath = '';
             try {
                 for (let i = 0; i < effectiveBeatTimestamps.length - 1; i++) {
                     const segmentStartTime = effectiveBeatTimestamps[i];
@@ -156,8 +165,8 @@ class BeatSyncGenerator {
                     }
                     // Ensure duration is positive and reasonable
                     segmentDuration = Math.max(0.02, segmentDuration);
-                    const randomVideoIndex = Math.floor(Math.random() * sourceVideos.length);
-                    const selectedSourceVideo = sourceVideos[randomVideoIndex];
+                    const selectedSourceVideo = sourceVideos[clipIndex % sourceVideos.length];
+                    clipIndex++;
                     const sourceVideoDuration = yield this._getVideoDuration(selectedSourceVideo);
                     let sourceStartTimeForCut = 0;
                     // If source video is shorter than segment, use full source video
@@ -172,6 +181,7 @@ class BeatSyncGenerator {
                     // Round to 3 decimal places to avoid issues with ffmpeg
                     sourceStartTimeForCut = parseFloat(sourceStartTimeForCut.toFixed(3));
                     segmentDuration = parseFloat(segmentDuration.toFixed(3));
+                    const usedDuration = segmentDuration;
                     const tempSegmentPath = path.join(this.tempSegmentDirectory, `segment_${i}_${Date.now()}.mp4`);
                     const ffmpegArgs = [
                         '-i', selectedSourceVideo,
@@ -182,6 +192,7 @@ class BeatSyncGenerator {
                         '-preset', 'medium', // Balance between speed and quality
                         '-crf', '23', // Constant Rate Factor (quality, lower is better)
                         '-pix_fmt', 'yuv420p', // Common pixel format
+                        '-r', '30', // Force constant framerate
                         '-y', // Overwrite output files without asking
                         tempSegmentPath
                     ];
@@ -193,6 +204,7 @@ class BeatSyncGenerator {
                         process.on('close', (code) => {
                             if (code === 0) {
                                 tempSegmentPaths.push(tempSegmentPath);
+                                totalVideoDuration += usedDuration;
                                 resolve();
                             }
                             else {
@@ -204,6 +216,43 @@ class BeatSyncGenerator {
                             console.error(`FFmpeg process error (segment ${i}): ${err.message}`);
                             reject(new Error(`Failed to start FFmpeg process for segment ${i}: ${err.message}`));
                         });
+                    });
+                }
+                while (totalVideoDuration + 0.01 < actualAudioDuration) {
+                    const remaining = actualAudioDuration - totalVideoDuration;
+                    const fillerClip = sourceVideos[clipIndex % sourceVideos.length];
+                    clipIndex++;
+                    const clipDur = yield this._getVideoDuration(fillerClip);
+                    const fillDuration = Math.min(remaining, clipDur);
+                    const fillerPath = path.join(this.tempSegmentDirectory, `fill_${Date.now()}_${clipIndex}.mp4`);
+                    const fillerArgs = [
+                        '-i', fillerClip,
+                        '-t', fillDuration.toString(),
+                        '-an',
+                        '-c:v', 'libx264',
+                        '-preset', 'medium',
+                        '-crf', '23',
+                        '-pix_fmt', 'yuv420p',
+                        '-r', '30',
+                        '-y',
+                        fillerPath
+                    ];
+                    yield new Promise((resolve, reject) => {
+                        const p = (0, child_process_1.spawn)(this.ffmpegPath, fillerArgs);
+                        let stderr = '';
+                        p.stderr.on('data', d => stderr += d.toString());
+                        p.on('close', code => {
+                            if (code === 0) {
+                                tempSegmentPaths.push(fillerPath);
+                                totalVideoDuration += fillDuration;
+                                resolve();
+                            }
+                            else {
+                                console.error(`FFmpeg stderr (filler): ${stderr}`);
+                                reject(new Error(`FFmpeg (filler) exited with code ${code}.`));
+                            }
+                        });
+                        p.on('error', err => reject(err));
                     });
                 }
                 if (tempSegmentPaths.length === 0) {
@@ -229,8 +278,9 @@ class BeatSyncGenerator {
                     '-preset', 'medium',
                     '-crf', '23',
                     '-pix_fmt', 'yuv420p',
+                    '-r', '30',
                     '-y', // Overwrite output
-                    finalOutputVideoPath
+                    tempConcatVideoPath
                 ];
                 console.log(`Executing ffmpeg concat: ${this.ffmpegPath} ${concatFfmpegArgs.join(' ')}`);
                 yield new Promise((resolve, reject) => {
@@ -250,6 +300,58 @@ class BeatSyncGenerator {
                         console.error(`FFmpeg concat process error: ${err.message}`);
                         reject(new Error(`Failed to start FFmpeg concat process: ${err.message}`));
                     });
+                });
+                audioSegmentPath = path.join(this.tempSegmentDirectory, `audio_${Date.now()}${path.extname(audioFilePath)}`);
+                const audioCutArgs = [
+                    '-i', audioFilePath,
+                    '-ss', audioStartTime.toString(),
+                    '-t', actualAudioDuration.toString(),
+                    '-y',
+                    audioSegmentPath
+                ];
+                yield new Promise((resolve, reject) => {
+                    const p = (0, child_process_1.spawn)(this.ffmpegPath, audioCutArgs);
+                    let stderr = '';
+                    p.stderr.on('data', d => stderr += d.toString());
+                    p.on('close', code => {
+                        if (code === 0) {
+                            resolve();
+                        }
+                        else {
+                            console.error(`FFmpeg audio cut stderr: ${stderr}`);
+                            reject(new Error(`FFmpeg (audio cut) exited with code ${code}.`));
+                        }
+                    });
+                    p.on('error', err => reject(err));
+                });
+                const mergeArgs = [
+                    '-i', tempConcatVideoPath,
+                    '-i', audioSegmentPath,
+                    '-c:v', 'libx264',
+                    '-preset', 'medium',
+                    '-crf', '23',
+                    '-pix_fmt', 'yuv420p',
+                    '-r', '30',
+                    '-c:a', 'aac',
+                    '-t', actualAudioDuration.toString(),
+                    '-shortest',
+                    '-y',
+                    finalOutputVideoPath
+                ];
+                yield new Promise((resolve, reject) => {
+                    const p = (0, child_process_1.spawn)(this.ffmpegPath, mergeArgs);
+                    let stderr = '';
+                    p.stderr.on('data', d => stderr += d.toString());
+                    p.on('close', code => {
+                        if (code === 0) {
+                            resolve();
+                        }
+                        else {
+                            console.error(`FFmpeg merge stderr: ${stderr}`);
+                            reject(new Error(`FFmpeg (merge) exited with code ${code}.`));
+                        }
+                    });
+                    p.on('error', err => reject(err));
                 });
                 return finalOutputVideoPath;
             }
@@ -272,6 +374,18 @@ class BeatSyncGenerator {
                     catch (e) {
                         console.warn(`Failed to delete concat list ${concatFilePath}: ${e.message}`);
                     }
+                }
+                if (fs.existsSync(tempConcatVideoPath)) {
+                    try {
+                        fs.unlinkSync(tempConcatVideoPath);
+                    }
+                    catch (_a) { }
+                }
+                if (fs.existsSync(audioSegmentPath)) {
+                    try {
+                        fs.unlinkSync(audioSegmentPath);
+                    }
+                    catch (_b) { }
                 }
                 // Optionally, try to remove the temp_beat_segments directory if empty
                 try {

@@ -126,7 +126,7 @@ function processDownloadedVideos(category_1) {
     });
 }, (argv) => {
     try {
-        const app = new app_1.SakugaDownAndClipGen(argv['download-dir'], argv['clips-dir'], 'output/temp_audio', // tempAudioDirectory (using default)
+        const app = new app_1.SakugaDownAndClipGen(argv['download-dir'], argv['clips-dir'], 'output/random_names', 'output/temp_audio', // tempAudioDirectory (using default)
         'output/beat_synced_videos', // beatSyncedVideosDirectory (using default)
         argv.port);
         app.startServer();

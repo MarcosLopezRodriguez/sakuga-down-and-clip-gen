@@ -53,6 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const audioEndTimeInput = document.getElementById('audioEndTime');
     // Note: beatSyncForm and generateBeatSyncVideoBtn will be handled for form submission later.
     let allBeatSyncClipFolders = []; // Variable to store all clip folders for beat-sync tab
+    let analyzedAudioFileName = '';
 
     // Initialize video lists
     loadVideoLists();
@@ -472,7 +473,7 @@ document.addEventListener('DOMContentLoaded', () => {
         beatSyncFolderListContainer.innerHTML = '<p class="text-muted">Loading clip folders...</p>';
 
         try {
-            const response = await fetch('/api/clips/list-folders'); // Assuming same endpoint for now
+            const response = await fetch('/api/random-names/list-folders');
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({ message: 'Failed to fetch clip folders for beat sync. Server returned an error.' }));
                 throw new Error(errorData.message || `HTTP error ${response.status}`);
@@ -617,10 +618,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 const beatTimestamps = analysisData.analysis.beats;
+                analyzedAudioFileName = analysisData.audioFileName;
                 updateBeatSyncStatus('Audio analysis complete. Starting video generation...', false, 30);
 
                 // --- 2. Video Generation ---
-                await startVideoGeneration(beatTimestamps, audioStartTime, audioEndTime, selectedClipFolders, outputVideoName);
+                await startVideoGeneration(beatTimestamps, audioStartTime, audioEndTime, selectedClipFolders, outputVideoName, analyzedAudioFileName);
 
             } catch (error) {
                 console.error('Beat Sync Error:', error);
@@ -661,7 +663,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function startVideoGeneration(beatTimestamps, audioStartTime, audioEndTime, sourceClipFolderPaths, outputVideoName) {
+    async function startVideoGeneration(beatTimestamps, audioStartTime, audioEndTime, sourceClipFolderPaths, outputVideoName, audioFileName) {
         updateBeatSyncStatus('Generating beat-synced video...', false, 40);
 
         const payload = {
@@ -669,7 +671,8 @@ document.addEventListener('DOMContentLoaded', () => {
             audioStartTime,
             audioEndTime,
             sourceClipFolderPaths,
-            outputVideoName
+            outputVideoName,
+            audioFileName
         };
 
         const response = await fetch('/api/video/generate-beat-matched', {

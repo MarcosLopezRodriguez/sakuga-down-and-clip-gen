@@ -96,12 +96,22 @@ export class BeatSyncGenerator {
         audioEndTime: number,
         sourceClipFolderPaths: string[],
         outputVideoName: string,
-        baseClipDirectory: string
+        baseClipDirectory: string,
+        audioFilePath: string
     ): Promise<string> {
-        const sourceVideos = this._listSourceVideos(sourceClipFolderPaths, baseClipDirectory);
+        let sourceVideos = this._listSourceVideos(sourceClipFolderPaths, baseClipDirectory);
         if (sourceVideos.length === 0) {
             throw new Error('No source video clips found in the specified folders.');
         }
+
+        // Prefer longer clips first as a naive "best" metric
+        sourceVideos = sourceVideos
+            .map(p => ({ path: p, size: fs.statSync(p).size }))
+            .sort((a, b) => b.size - a.size)
+            .map(obj => obj.path);
+
+        let clipIndex = 0;
+        let totalVideoDuration = 0;
 
         const actualAudioDuration = audioEndTime - audioStartTime;
         if (actualAudioDuration <= 0) {
@@ -126,7 +136,9 @@ export class BeatSyncGenerator {
 
         const tempSegmentPaths: string[] = [];
         const concatFilePath = path.join(this.tempSegmentDirectory, 'concat_list.txt');
+        const tempConcatVideoPath = path.join(this.tempSegmentDirectory, `concat_${Date.now()}.mp4`);
         const finalOutputVideoPath = path.join(this.outputDirectory, outputVideoName);
+        let audioSegmentPath = '';
 
         try {
             for (let i = 0; i < effectiveBeatTimestamps.length - 1; i++) {
@@ -142,8 +154,8 @@ export class BeatSyncGenerator {
                 segmentDuration = Math.max(0.02, segmentDuration);
 
 
-                const randomVideoIndex = Math.floor(Math.random() * sourceVideos.length);
-                const selectedSourceVideo = sourceVideos[randomVideoIndex];
+                const selectedSourceVideo = sourceVideos[clipIndex % sourceVideos.length];
+                clipIndex++;
 
                 const sourceVideoDuration = await this._getVideoDuration(selectedSourceVideo);
 
@@ -159,6 +171,7 @@ export class BeatSyncGenerator {
                 // Round to 3 decimal places to avoid issues with ffmpeg
                 sourceStartTimeForCut = parseFloat(sourceStartTimeForCut.toFixed(3));
                 segmentDuration = parseFloat(segmentDuration.toFixed(3));
+                const usedDuration = segmentDuration;
 
 
                 const tempSegmentPath = path.join(this.tempSegmentDirectory, `segment_${i}_${Date.now()}.mp4`);
@@ -172,6 +185,7 @@ export class BeatSyncGenerator {
                     '-preset', 'medium', // Balance between speed and quality
                     '-crf', '23', // Constant Rate Factor (quality, lower is better)
                     '-pix_fmt', 'yuv420p', // Common pixel format
+                    '-r', '30', // Force constant framerate
                     '-y', // Overwrite output files without asking
                     tempSegmentPath
                 ];
@@ -185,6 +199,7 @@ export class BeatSyncGenerator {
                     process.on('close', (code) => {
                         if (code === 0) {
                             tempSegmentPaths.push(tempSegmentPath);
+                            totalVideoDuration += usedDuration;
                             resolve();
                         } else {
                             console.error(`FFmpeg stderr (segment ${i}): ${ffmpegStderr}`);
@@ -195,6 +210,43 @@ export class BeatSyncGenerator {
                          console.error(`FFmpeg process error (segment ${i}): ${err.message}`);
                         reject(new Error(`Failed to start FFmpeg process for segment ${i}: ${err.message}`));
                     });
+                });
+            }
+
+            while (totalVideoDuration + 0.01 < actualAudioDuration) {
+                const remaining = actualAudioDuration - totalVideoDuration;
+                const fillerClip = sourceVideos[clipIndex % sourceVideos.length];
+                clipIndex++;
+                const clipDur = await this._getVideoDuration(fillerClip);
+                const fillDuration = Math.min(remaining, clipDur);
+                const fillerPath = path.join(this.tempSegmentDirectory, `fill_${Date.now()}_${clipIndex}.mp4`);
+                const fillerArgs = [
+                    '-i', fillerClip,
+                    '-t', fillDuration.toString(),
+                    '-an',
+                    '-c:v', 'libx264',
+                    '-preset', 'medium',
+                    '-crf', '23',
+                    '-pix_fmt', 'yuv420p',
+                    '-r', '30',
+                    '-y',
+                    fillerPath
+                ];
+                await new Promise<void>((resolve, reject) => {
+                    const p = spawn(this.ffmpegPath, fillerArgs);
+                    let stderr = '';
+                    p.stderr.on('data', d => stderr += d.toString());
+                    p.on('close', code => {
+                        if (code === 0) {
+                            tempSegmentPaths.push(fillerPath);
+                            totalVideoDuration += fillDuration;
+                            resolve();
+                        } else {
+                            console.error(`FFmpeg stderr (filler): ${stderr}`);
+                            reject(new Error(`FFmpeg (filler) exited with code ${code}.`));
+                        }
+                    });
+                    p.on('error', err => reject(err));
                 });
             }
 
@@ -225,8 +277,9 @@ export class BeatSyncGenerator {
                 '-preset', 'medium',
                 '-crf', '23',
                 '-pix_fmt', 'yuv420p',
+                '-r', '30',
                 '-y', // Overwrite output
-                finalOutputVideoPath
+                tempConcatVideoPath
             ];
 
             console.log(`Executing ffmpeg concat: ${this.ffmpegPath} ${concatFfmpegArgs.join(' ')}`);
@@ -243,10 +296,64 @@ export class BeatSyncGenerator {
                         reject(new Error(`FFmpeg (concatenation) exited with code ${code}. Error: ${ffmpegConcatStderr}`));
                     }
                 });
-                 process.on('error', (err) => {
+                process.on('error', (err) => {
                     console.error(`FFmpeg concat process error: ${err.message}`);
                     reject(new Error(`Failed to start FFmpeg concat process: ${err.message}`));
                 });
+            });
+
+            audioSegmentPath = path.join(this.tempSegmentDirectory, `audio_${Date.now()}${path.extname(audioFilePath)}`);
+            const audioCutArgs = [
+                '-i', audioFilePath,
+                '-ss', audioStartTime.toString(),
+                '-t', actualAudioDuration.toString(),
+                '-y',
+                audioSegmentPath
+            ];
+
+            await new Promise<void>((resolve, reject) => {
+                const p = spawn(this.ffmpegPath, audioCutArgs);
+                let stderr = '';
+                p.stderr.on('data', d => stderr += d.toString());
+                p.on('close', code => {
+                    if (code === 0) {
+                        resolve();
+                    } else {
+                        console.error(`FFmpeg audio cut stderr: ${stderr}`);
+                        reject(new Error(`FFmpeg (audio cut) exited with code ${code}.`));
+                    }
+                });
+                p.on('error', err => reject(err));
+            });
+
+            const mergeArgs = [
+                '-i', tempConcatVideoPath,
+                '-i', audioSegmentPath,
+                '-c:v', 'libx264',
+                '-preset', 'medium',
+                '-crf', '23',
+                '-pix_fmt', 'yuv420p',
+                '-r', '30',
+                '-c:a', 'aac',
+                '-t', actualAudioDuration.toString(),
+                '-shortest',
+                '-y',
+                finalOutputVideoPath
+            ];
+
+            await new Promise<void>((resolve, reject) => {
+                const p = spawn(this.ffmpegPath, mergeArgs);
+                let stderr = '';
+                p.stderr.on('data', d => stderr += d.toString());
+                p.on('close', code => {
+                    if (code === 0) {
+                        resolve();
+                    } else {
+                        console.error(`FFmpeg merge stderr: ${stderr}`);
+                        reject(new Error(`FFmpeg (merge) exited with code ${code}.`));
+                    }
+                });
+                p.on('error', err => reject(err));
             });
 
             return finalOutputVideoPath;
@@ -268,6 +375,12 @@ export class BeatSyncGenerator {
                 } catch (e: any) {
                      console.warn(`Failed to delete concat list ${concatFilePath}: ${e.message}`);
                 }
+            }
+            if (fs.existsSync(tempConcatVideoPath)) {
+                try { fs.unlinkSync(tempConcatVideoPath); } catch {}
+            }
+            if (fs.existsSync(audioSegmentPath)) {
+                try { fs.unlinkSync(audioSegmentPath); } catch {}
             }
             // Optionally, try to remove the temp_beat_segments directory if empty
             try {
