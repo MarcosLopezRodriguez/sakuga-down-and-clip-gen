@@ -579,7 +579,7 @@ export class Downloader extends EventEmitter {
                             });
 
                             downloadedPaths.push(finalPath);
-                            await this.sleep(1000);  // Be nice to the server
+                            await this.sleep(100);  // Short pause between downloads
                         }
                     } catch (postError: any) {
                         console.error(`Error processing post ${postUrl}:`, postError);
@@ -593,7 +593,7 @@ export class Downloader extends EventEmitter {
                 }
 
                 page += 1;
-                await this.sleep(2000);  // Be nice to the server between pages
+                await this.sleep(200);  // Short pause between pages
             }
 
             // Emitir evento de finalización de procesamiento de etiqueta
