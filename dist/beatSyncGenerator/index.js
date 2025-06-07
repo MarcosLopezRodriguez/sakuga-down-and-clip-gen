@@ -122,10 +122,16 @@ class BeatSyncGenerator {
     }
     generateVideoFromAudioBeats(beatTimestamps, audioStartTime, audioEndTime, sourceClipFolderPaths, outputVideoName, baseClipDirectory, audioFilePath) {
         return __awaiter(this, void 0, void 0, function* () {
-            const sourceVideos = this._listSourceVideos(sourceClipFolderPaths, baseClipDirectory);
+            let sourceVideos = this._listSourceVideos(sourceClipFolderPaths, baseClipDirectory);
             if (sourceVideos.length === 0) {
                 throw new Error('No source video clips found in the specified folders.');
             }
+            // Prefer longer clips first as a naive "best" metric
+            sourceVideos = sourceVideos
+                .map(p => ({ path: p, size: fs.statSync(p).size }))
+                .sort((a, b) => b.size - a.size)
+                .map(obj => obj.path);
+            let clipIndex = 0;
             const actualAudioDuration = audioEndTime - audioStartTime;
             if (actualAudioDuration <= 0) {
                 throw new Error('Audio end time must be greater than audio start time.');
@@ -158,8 +164,8 @@ class BeatSyncGenerator {
                     }
                     // Ensure duration is positive and reasonable
                     segmentDuration = Math.max(0.02, segmentDuration);
-                    const randomVideoIndex = Math.floor(Math.random() * sourceVideos.length);
-                    const selectedSourceVideo = sourceVideos[randomVideoIndex];
+                    const selectedSourceVideo = sourceVideos[clipIndex % sourceVideos.length];
+                    clipIndex++;
                     const sourceVideoDuration = yield this._getVideoDuration(selectedSourceVideo);
                     let sourceStartTimeForCut = 0;
                     // If source video is shorter than segment, use full source video
@@ -281,6 +287,7 @@ class BeatSyncGenerator {
                     '-i', audioSegmentPath,
                     '-c:v', 'copy',
                     '-c:a', 'aac',
+                    '-t', actualAudioDuration.toString(),
                     '-shortest',
                     '-y',
                     finalOutputVideoPath
