@@ -552,7 +552,7 @@ class Downloader extends events_1.EventEmitter {
                                     });
                                 });
                                 downloadedPaths.push(finalPath);
-                                yield this.sleep(1000); // Be nice to the server
+                                yield this.sleep(100); // Short pause between downloads
                             }
                         }
                         catch (postError) {
@@ -566,7 +566,7 @@ class Downloader extends events_1.EventEmitter {
                         }
                     }
                     page += 1;
-                    yield this.sleep(2000); // Be nice to the server between pages
+                    yield this.sleep(200); // Short pause between pages
                 }
                 // Emitir evento de finalización de procesamiento de etiqueta
                 this.emit('tagProcessingComplete', {

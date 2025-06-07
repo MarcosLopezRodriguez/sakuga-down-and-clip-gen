@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Variables globales
     let currentDownloads = new Map();
     let allDownloadedVideos = [];
+    let downloadsInProgress = false;
 
     // Tab navigation
     const navLinks = document.querySelectorAll('.navbar-nav .nav-link');
@@ -161,6 +162,8 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Descarga iniciada:', data);
         showDownloadStatus(`${data.message}`);
 
+        downloadsInProgress = true;
+
         // Almacenar información de la descarga
         if (!currentDownloads.has(data.url)) {
             currentDownloads.set(data.url, {
@@ -217,6 +220,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateDownloadList();
 
+        if (currentDownloads.size === 0) {
+            showDownloadStatus('Descargas finalizadas');
+            downloadsInProgress = false;
+        }
+
         // Recargar listas de videos
         loadVideoLists();
     });
@@ -234,6 +242,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         updateDownloadList();
+
+        if (currentDownloads.size === 0) {
+            showDownloadStatus('Descargas finalizadas');
+            downloadsInProgress = false;
+        }
     });
 
     socket.on('directoriesUpdated', (data) => {
@@ -810,7 +823,12 @@ function updateDownloadList() {
     const activeDownloads = Array.from(currentDownloads.values());
 
     if (activeDownloads.length === 0) {
-        downloadStatus.textContent = 'No hay descargas activas';
+        if (downloadsInProgress) {
+            downloadStatus.textContent = 'Descargas finalizadas';
+            downloadsInProgress = false;
+        } else {
+            downloadStatus.textContent = 'No hay descargas activas';
+        }
         return;
     }
 
