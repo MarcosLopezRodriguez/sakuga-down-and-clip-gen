@@ -193,6 +193,13 @@ La mayoría de los comandos de descarga aceptan `--concurrency` para controlar c
 - **Gestión de dependencias**: npm
 - **Bundling/Compilación**: TypeScript Compiler (`tsc`)
 
+## Solución de problemas
+
+Si al generar clips aparece el mensaje de error `spawn ffmpeg ENOENT`, significa que
+la aplicación no encuentra el ejecutable de FFmpeg. Asegúrate de que FFmpeg esté
+instalado y disponible en el `PATH` de tu sistema o define la variable de entorno
+`FFMPEG_PATH` con la ruta completa al ejecutable.
+
 ## Créditos y Apoyo al desarrollo
 
 Si esta aplicación te ha ayudado, considera apoyar al desarrollo de esta y otras aplicaciones: https://ko-fi.com/markonichan
