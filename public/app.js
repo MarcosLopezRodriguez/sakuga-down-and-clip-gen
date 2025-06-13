@@ -50,7 +50,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const beatSyncDeselectAllFoldersBtn = document.getElementById('beatSyncDeselectAllFoldersBtn');
     const audioFileUploadInput = document.getElementById('audioFileUpload');
     const audioInfoDiv = document.getElementById('audioInfo');
+    const audioStartTimeInput = document.getElementById('audioStartTime');
     const audioEndTimeInput = document.getElementById('audioEndTime');
+    const audioRangeSlider = document.getElementById('audioRangeSlider');
+    const audioPreview = document.getElementById('audioPreview');
+    let audioDuration = 0;
     // Note: beatSyncForm and generateBeatSyncVideoBtn will be handled for form submission later.
     let allBeatSyncClipFolders = []; // Variable to store all clip folders for beat-sync tab
     let analyzedAudioFileName = '';
@@ -516,32 +520,74 @@ document.addEventListener('DOMContentLoaded', () => {
     if (audioFileUploadInput) {
         audioFileUploadInput.addEventListener('change', (event) => {
             const audioFile = event.target.files[0];
+            if (audioRangeSlider && audioRangeSlider.noUiSlider) {
+                audioRangeSlider.noUiSlider.destroy();
+            }
+            if (audioPreview) {
+                audioPreview.style.display = 'none';
+            }
             if (audioFile && audioInfoDiv) {
-                // Clear previous info and show loading
                 audioInfoDiv.textContent = 'Loading audio metadata...';
-                const reader = new FileReader();
-
-                reader.onload = (e) => {
-                    const audio = new Audio(); // Create new Audio object
-                    // It's crucial to set up event listeners before setting src
-                    audio.addEventListener('loadedmetadata', () => {
-                        audioInfoDiv.textContent = `Audio duration: ${audio.duration.toFixed(2)} seconds.`;
-                        if (audioEndTimeInput && !audioEndTimeInput.value) { // Pre-fill only if empty
-                           audioEndTimeInput.value = audio.duration.toFixed(2);
+                const objectUrl = URL.createObjectURL(audioFile);
+                if (audioPreview) {
+                    audioPreview.src = objectUrl;
+                    audioPreview.style.display = 'block';
+                }
+                const audio = new Audio();
+                audio.addEventListener('loadedmetadata', () => {
+                    audioDuration = audio.duration;
+                    audioInfoDiv.textContent = `Audio duration: ${audioDuration.toFixed(2)} seconds.`;
+                    if (audioStartTimeInput) audioStartTimeInput.value = '0';
+                    if (audioEndTimeInput) audioEndTimeInput.value = audioDuration.toFixed(2);
+                    if (audioRangeSlider) {
+                        noUiSlider.create(audioRangeSlider, {
+                            start: [0, audioDuration],
+                            connect: true,
+                            range: { min: 0, max: audioDuration },
+                            step: 0.01,
+                            tooltips: [true, true],
+                            format: wNumb({ decimals: 2 })
+                        });
+                        audioRangeSlider.noUiSlider.on('update', (values) => {
+                            if (audioStartTimeInput) audioStartTimeInput.value = values[0];
+                            if (audioEndTimeInput) audioEndTimeInput.value = values[1];
+                        });
+                        if (audioStartTimeInput) {
+                            audioStartTimeInput.addEventListener('input', () => {
+                                if (audioRangeSlider.noUiSlider) {
+                                    let start = parseFloat(audioStartTimeInput.value) || 0;
+                                    const end = parseFloat(audioRangeSlider.noUiSlider.get()[1]);
+                                    if (start >= end) {
+                                        start = end - 0.01;
+                                        audioStartTimeInput.value = start.toFixed(2);
+                                    }
+                                    audioRangeSlider.noUiSlider.set([start, null]);
+                                }
+                            });
                         }
-                    });
-                    audio.addEventListener('error', (err) => {
-                        audioInfoDiv.textContent = 'Error loading audio file. Please ensure it is a valid MP3 or WAV file.';
-                        console.error('Error loading audio for metadata:', err, audio.error);
-                    });
-                    audio.src = e.target.result; // Set src to trigger loading
-                };
-                reader.onerror = (err) => { // Handle FileReader errors
-                    audioInfoDiv.textContent = 'Error reading audio file.';
-                    console.error('Error reading file with FileReader:', err);
-                };
-                reader.readAsDataURL(audioFile); // Read the file
-            } else if (audioInfoDiv) { // If no file is selected or audioInfoDiv is missing
+                        if (audioEndTimeInput) {
+                            audioEndTimeInput.addEventListener('input', () => {
+                                if (audioRangeSlider.noUiSlider) {
+                                    const start = parseFloat(audioRangeSlider.noUiSlider.get()[0]);
+                                    let end = parseFloat(audioEndTimeInput.value) || audioDuration;
+                                    if (end <= start) {
+                                        end = start + 0.01;
+                                        audioEndTimeInput.value = end.toFixed(2);
+                                    }
+                                    audioRangeSlider.noUiSlider.set([null, end]);
+                                }
+                            });
+                        }
+                    }
+                    URL.revokeObjectURL(objectUrl);
+                });
+                audio.addEventListener('error', (err) => {
+                    audioInfoDiv.textContent = 'Error loading audio file. Please ensure it is a valid MP3 or WAV file.';
+                    console.error('Error loading audio for metadata:', err, audio.error);
+                    URL.revokeObjectURL(objectUrl);
+                });
+                audio.src = objectUrl;
+            } else if (audioInfoDiv) {
                 audioInfoDiv.textContent = 'Sube un audio para ver su duración.';
             }
         });
