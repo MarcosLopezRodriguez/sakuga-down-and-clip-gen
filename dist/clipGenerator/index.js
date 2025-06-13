@@ -187,14 +187,8 @@ class ClipGenerator {
                     }
                 });
                 ffmpegProcess.on('error', (err) => {
-                    if (err.code === 'ENOENT') {
-                        console.error(`FFmpeg not found at ${this.ffmpegPath}. Set the FFMPEG_PATH environment variable or install FFmpeg.`);
-                        reject(new Error(`FFmpeg executable not found: ${this.ffmpegPath}`));
-                    }
-                    else {
-                        console.error(`Error: Failed to start ffmpeg process: ${err.message}`);
-                        reject(new Error(`Failed to start ffmpeg process: ${err.message}`));
-                    }
+                    console.error(`Error: Failed to start ffmpeg process: ${err.message}`);
+                    reject(new Error(`Failed to start ffmpeg process: ${err.message}`));
                 });
             });
         });
@@ -251,7 +245,7 @@ class ClipGenerator {
                     '--threshold', threshold.toString(),
                     'list-scenes',
                     '--output', tempDir,
-                    '--filename', `${videoBaseName}-Scenes.csv`
+                    '--filename-format', `${videoBaseName}-Scenes.csv`
                 ];
                 const sceneDetectProcess = (0, child_process_1.spawn)('python', args);
                 let stdoutData = '';
@@ -537,13 +531,7 @@ class ClipGenerator {
                     }
                 }));
                 ffmpegProcess.on('error', (err) => {
-                    if (err.code === 'ENOENT') {
-                        console.error(`FFmpeg not found at ${this.ffmpegPath}. Set the FFMPEG_PATH environment variable or install FFmpeg.`);
-                        reject(new Error(`FFmpeg executable not found: ${this.ffmpegPath}`));
-                    }
-                    else {
-                        reject(new Error(`Failed to start FFmpeg process: ${err.message}`));
-                    }
+                    reject(new Error(`Failed to start FFmpeg process: ${err.message}`));
                 });
             });
         });
@@ -792,13 +780,7 @@ class ClipGenerator {
                     }
                 });
                 ffmpegProcess.on('error', (err) => {
-                    if (err.code === 'ENOENT') {
-                        console.error(`FFmpeg not found at ${this.ffmpegPath}. Set the FFMPEG_PATH environment variable or install FFmpeg.`);
-                        reject(new Error(`FFmpeg executable not found: ${this.ffmpegPath}`));
-                    }
-                    else {
-                        reject(new Error(`Error iniciando proceso ffmpeg: ${err.message}`));
-                    }
+                    reject(new Error(`Error iniciando proceso ffmpeg: ${err.message}`));
                 });
             });
         });
@@ -859,13 +841,7 @@ class ClipGenerator {
                     }
                 }));
                 ffmpegProcess.on('error', (err) => {
-                    if (err.code === 'ENOENT') {
-                        console.error(`FFmpeg not found at ${this.ffmpegPath}. Set the FFMPEG_PATH environment variable or install FFmpeg.`);
-                        reject(new Error(`FFmpeg executable not found: ${this.ffmpegPath}`));
-                    }
-                    else {
-                        reject(new Error(`Error iniciando FFmpeg: ${err.message}`));
-                    }
+                    reject(new Error(`Error iniciando FFmpeg: ${err.message}`));
                 });
             });
         });

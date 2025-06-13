@@ -129,6 +129,7 @@ Para obtener ayuda sobre cualquier comando y ver todas las opciones disponibles,
 
 La mayoría de los comandos de descarga aceptan `--concurrency` para controlar cuántos archivos se descargan simultáneamente (por defecto 3).
 
+
 **Ejemplos básicos:**
 
 *   **Descargar videos por URL o etiqueta:**
@@ -138,7 +139,6 @@ La mayoría de los comandos de descarga aceptan `--concurrency` para controlar c
 
     # Descargar videos con una etiqueta específica
     node dist/index.js download "https://sakugabooru.com/post?tags=sword_fight"
-
     # Limitar a 5 descargas simultáneas
     node dist/index.js download "https://sakugabooru.com/post?tags=sword_fight" --concurrency 5
 
@@ -192,13 +192,6 @@ La mayoría de los comandos de descarga aceptan `--concurrency` para controlar c
 - **Análisis de Audio**: Aubio (para detección de beats)
 - **Gestión de dependencias**: npm
 - **Bundling/Compilación**: TypeScript Compiler (`tsc`)
-
-## Solución de problemas
-
-Si al generar clips aparece el mensaje de error `spawn ffmpeg ENOENT`, significa que
-la aplicación no encuentra el ejecutable de FFmpeg. Asegúrate de que FFmpeg esté
-instalado y disponible en el `PATH` de tu sistema o define la variable de entorno
-`FFMPEG_PATH` con la ruta completa al ejecutable.
 
 ## Créditos y Apoyo al desarrollo
 
