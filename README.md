@@ -7,6 +7,7 @@ Una aplicación para descargar videos de Sakugabooru y generar clips automática
 *   **Descarga Versátil de Videos**:
     *   Soporte para URLs de Sakugabooru (posts individuales y búsquedas por etiquetas).
     *   Compatible con URLs directas de archivos de video.
+    *   Posibilidad de descargar videos de TikTok, YouTube Shorts o X usando `yt-dlp`.
     *   Descarga de múltiples videos a partir de un listado de etiquetas en un archivo de texto (mediante CLI).
 *   **Potente Generación de Clips**:
     *   Detección de escenas configurable:

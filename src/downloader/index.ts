@@ -4,6 +4,7 @@ import * as path from 'path';
 import { parse as urlParse } from 'url';
 import * as cheerio from 'cheerio';
 import { EventEmitter } from 'events';
+import { spawn } from 'child_process';
 
 export class Downloader extends EventEmitter {
     private baseUrl: string;
@@ -132,6 +133,72 @@ export class Downloader extends EventEmitter {
         }
     }
 
+    private async downloadWithYtDlp(url: string, outputDir: string): Promise<string> {
+        const urlObj = new URL(url);
+        const hostname = urlObj.hostname.replace(/^www\./, '').split('.')[0] || 'video';
+        const tag = this.sanitizeDirectoryName(hostname);
+
+        this.emit('downloadStarted', { url, tag, status: 'starting', message: `Iniciando descarga con yt-dlp` });
+
+        const tagDir = path.join(outputDir, tag);
+        this.createDirectorySafely(tagDir);
+
+        const filenamePattern = `${tag}_${this.videoCounter}.%(ext)s`;
+        const finalPattern = path.join(tagDir, filenamePattern);
+
+        return new Promise((resolve, reject) => {
+            const ytProcess = spawn('yt-dlp', ['-o', finalPattern, '--newline', url]);
+
+            let savedPath = '';
+
+            ytProcess.stdout.on('data', (data) => {
+                const lines = data.toString().split(/\r?\n/);
+                for (const line of lines) {
+                    if (line.startsWith('[download]')) {
+                        const destMatch = line.match(/Destination:\s(.+)/);
+                        if (destMatch) {
+                            savedPath = destMatch[1].trim();
+                        }
+                        const progressMatch = line.match(/(\d{1,3}\.\d)%/);
+                        if (progressMatch) {
+                            const progress = parseFloat(progressMatch[1]);
+                            this.emit('downloadProgress', { url, tag, status: 'downloading', message: `Descargando (${progress}%)`, progress });
+                        }
+                    }
+                }
+            });
+
+            ytProcess.stderr.on('data', (data) => {
+                console.error(`yt-dlp stderr: ${data}`);
+            });
+
+            ytProcess.on('close', (code) => {
+                if (code === 0 && savedPath) {
+                    this.videoCounter += 1;
+                    this.emit('downloadComplete', {
+                        url,
+                        tag,
+                        status: 'complete',
+                        message: `Guardado como: ${path.basename(savedPath)}`,
+                        filePath: path.relative(outputDir, savedPath).replace(/\\/g, '/'),
+                        fileSize: fs.existsSync(savedPath) ? fs.statSync(savedPath).size : 0,
+                        fileName: path.basename(savedPath)
+                    });
+                    resolve(savedPath);
+                } else {
+                    const msg = `yt-dlp exited with code ${code}`;
+                    this.emit('downloadError', { url, tag, status: 'error', message: msg });
+                    reject(new Error(msg));
+                }
+            });
+
+            ytProcess.on('error', (err) => {
+                this.emit('downloadError', { url, tag, status: 'error', message: err.message });
+                reject(err);
+            });
+        });
+    }
+
     async getVideoPostsFromPage(url: string): Promise<string[]> {
         try {
             if (!this.validateUrl(url)) {
@@ -247,7 +314,7 @@ export class Downloader extends EventEmitter {
 
             const outputDir = customOutputDir || this.outputDirectory;
 
-            // Determinar si es una URL de Sakuga o una URL directa de video
+            // Determinar si es una URL de Sakuga u otras plataformas
             let videoUrl = url;
             let tag = 'custom';
 
@@ -290,6 +357,8 @@ export class Downloader extends EventEmitter {
                         videoUrl = fetchedVideoUrl;
                     }
                 }
+            } else if (/tiktok\.com|youtube\.com|youtu\.be|twitter\.com|x\.com/.test(url)) {
+                return await this.downloadWithYtDlp(url, outputDir);
             } else {
                 // URL directa de video, intentar extraer un nombre del dominio
                 const urlObj = new URL(url);
