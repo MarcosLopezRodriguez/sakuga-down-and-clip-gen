@@ -343,13 +343,13 @@ export class Downloader extends EventEmitter {
             const extension = ['.mp4', '.webm', '.mkv'].includes(originalExt) ? originalExt : '.mp4';
 
             // Crear nombre de archivo siguiendo el formato tag_número
-            const newFilename = `${tag}_${this.videoCounter}${extension}`;
+            const index = this.videoCounter++;
+            const newFilename = `${tag}_${index}${extension}`;
             const finalPath = path.join(tagDir, newFilename);
 
             // Verificar si el archivo ya existe
             if (fs.existsSync(finalPath)) {
                 console.log(`File already exists: ${newFilename}`);
-                this.videoCounter += 1;
 
                 // Emitir evento de descarga completada (para archivos que ya existen)
                 this.emit('downloadComplete', {
@@ -415,7 +415,6 @@ export class Downloader extends EventEmitter {
             return new Promise((resolve, reject) => {
                 writer.on('finish', () => {
                     console.log(`Saved as: ${newFilename}`);
-                    this.videoCounter += 1;
 
                     // Emitir evento de descarga completada
                     this.emit('downloadComplete', {
@@ -505,12 +504,12 @@ export class Downloader extends EventEmitter {
                                 const originalFilename = path.basename(videoUrl);
                                 const originalExt = path.extname(originalFilename).toLowerCase();
                                 const extension = ['.mp4', '.webm', '.mkv'].includes(originalExt) ? originalExt : '.mp4';
-                                const newFilename = `${tag}_${this.videoCounter}${extension}`;
+                                const index = this.videoCounter++;
+                                const newFilename = `${tag}_${index}${extension}`;
                                 const finalPath = path.join(tagDir, newFilename);
 
                                 if (fs.existsSync(finalPath)) {
                                     console.log(`File already exists: ${newFilename}`);
-                                    this.videoCounter += 1;
                                     this.emit('downloadComplete', {
                                         url: videoUrl,
                                         tag,
@@ -567,7 +566,6 @@ export class Downloader extends EventEmitter {
                                 await new Promise<void>((resolve, reject) => {
                                     writer.on('finish', () => {
                                         console.log(`Saved as: ${newFilename}`);
-                                        this.videoCounter += 1;
                                         this.emit('downloadComplete', {
                                             url: videoUrl,
                                             tag,
