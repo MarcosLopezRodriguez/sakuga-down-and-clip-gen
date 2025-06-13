@@ -4,7 +4,38 @@ import * as path from 'path';
 import { parse as urlParse } from 'url';
 import * as cheerio from 'cheerio';
 import { EventEmitter } from 'events';
-import pLimit from 'p-limit';
+// Simple concurrency limiter inspired by 'p-limit'
+function pLimit(concurrency: number) {
+    let activeCount = 0;
+    const queue: (() => void)[] = [];
+
+    const next = () => {
+        if (activeCount >= concurrency || queue.length === 0) {
+            return;
+        }
+        activeCount++;
+        const fn = queue.shift()!;
+        fn();
+    };
+
+    return async function <T>(fn: () => Promise<T>): Promise<T> {
+        return new Promise<T>((resolve, reject) => {
+            const run = async () => {
+                try {
+                    const result = await fn();
+                    resolve(result);
+                } catch (err) {
+                    reject(err);
+                } finally {
+                    activeCount--;
+                    next();
+                }
+            };
+            queue.push(run);
+            next();
+        });
+    };
+}
 
 export class Downloader extends EventEmitter {
     private baseUrl: string;

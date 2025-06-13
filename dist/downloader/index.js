@@ -52,7 +52,40 @@ const path = __importStar(require("path"));
 const url_1 = require("url");
 const cheerio = __importStar(require("cheerio"));
 const events_1 = require("events");
-const p_limit_1 = __importDefault(require("p-limit"));
+// Simple concurrency limiter inspired by 'p-limit'
+function pLimit(concurrency) {
+    let activeCount = 0;
+    const queue = [];
+    const next = () => {
+        if (activeCount >= concurrency || queue.length === 0) {
+            return;
+        }
+        activeCount++;
+        const fn = queue.shift();
+        fn();
+    };
+    return function (fn) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve, reject) => {
+                const run = () => __awaiter(this, void 0, void 0, function* () {
+                    try {
+                        const result = yield fn();
+                        resolve(result);
+                    }
+                    catch (err) {
+                        reject(err);
+                    }
+                    finally {
+                        activeCount--;
+                        next();
+                    }
+                });
+                queue.push(run);
+                next();
+            });
+        });
+    };
+}
 class Downloader extends events_1.EventEmitter {
     constructor(baseUrl = 'https://www.sakugabooru.com', outputDirectory = 'output/downloads', concurrency = 3) {
         super();
@@ -429,7 +462,7 @@ class Downloader extends events_1.EventEmitter {
             const tag = this.getTagFromUrl(tagUrl);
             let page = 1;
             const downloadedPaths = [];
-            const limit = (0, p_limit_1.default)(this.concurrency);
+            const limit = pLimit(this.concurrency);
             console.log(`\n===== Processing: ${tag} =====`);
             // Emitir evento de inicio de procesamiento de etiqueta
             this.emit('tagProcessingStarted', { tag, message: `Iniciando procesamiento de etiqueta: ${tag}` });
