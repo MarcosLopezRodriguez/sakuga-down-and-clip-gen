@@ -1336,6 +1336,14 @@ async function deleteClip(clipPath, elementId) {
         // Show success feedback
         console.log(`Clip eliminado: ${clipPath}`);
 
+        // Remove the clip element from the DOM if an ID was provided
+        if (elementId) {
+            const el = document.getElementById(elementId);
+            if (el) {
+                el.remove();
+            }
+        }
+
         // Extract video name from clip path for pagination management
         const pathParts = clipPath.split('/');
         const videoName = pathParts.length > 1 ? pathParts[0] : 'other';
