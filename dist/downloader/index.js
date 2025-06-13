@@ -52,11 +52,13 @@ const path = __importStar(require("path"));
 const url_1 = require("url");
 const cheerio = __importStar(require("cheerio"));
 const events_1 = require("events");
+const p_limit_1 = __importDefault(require("p-limit"));
 class Downloader extends events_1.EventEmitter {
-    constructor(baseUrl = 'https://www.sakugabooru.com', outputDirectory = 'output/downloads') {
+    constructor(baseUrl = 'https://www.sakugabooru.com', outputDirectory = 'output/downloads', concurrency = 3) {
         super();
         this.baseUrl = baseUrl;
         this.outputDirectory = outputDirectory;
+        this.concurrency = concurrency;
         this.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         };
@@ -427,6 +429,7 @@ class Downloader extends events_1.EventEmitter {
             const tag = this.getTagFromUrl(tagUrl);
             let page = 1;
             const downloadedPaths = [];
+            const limit = (0, p_limit_1.default)(this.concurrency);
             console.log(`\n===== Processing: ${tag} =====`);
             // Emitir evento de inicio de procesamiento de etiqueta
             this.emit('tagProcessingStarted', { tag, message: `Iniciando procesamiento de etiqueta: ${tag}` });
@@ -451,26 +454,20 @@ class Downloader extends events_1.EventEmitter {
                         count: postUrls.length,
                         message: `Encontrados ${postUrls.length} posts en página ${page}`
                     });
-                    for (const postUrl of postUrls) {
+                    const tasks = postUrls.map(postUrl => limit(() => __awaiter(this, void 0, void 0, function* () {
                         try {
                             const videoUrl = yield this.getVideoUrlFromPost(postUrl);
                             if (videoUrl) {
-                                // Crear directorio específico para el tag de forma segura
                                 const tagDir = path.join(outputDir, tag);
                                 this.createDirectorySafely(tagDir);
-                                // Obtener extensión del archivo original
                                 const originalFilename = path.basename(videoUrl);
                                 const originalExt = path.extname(originalFilename).toLowerCase();
-                                // Usar mp4 como formato por defecto, pero respetar la extensión original si es un formato de video
                                 const extension = ['.mp4', '.webm', '.mkv'].includes(originalExt) ? originalExt : '.mp4';
-                                // Crear nombre de archivo siguiendo el formato tag_número
                                 const newFilename = `${tag}_${this.videoCounter}${extension}`;
                                 const finalPath = path.join(tagDir, newFilename);
-                                // Verificar si el archivo ya existe
                                 if (fs.existsSync(finalPath)) {
                                     console.log(`File already exists: ${newFilename}`);
                                     this.videoCounter += 1;
-                                    // Emitir evento de descarga completada (para archivos que ya existen)
                                     this.emit('downloadComplete', {
                                         url: videoUrl,
                                         tag,
@@ -481,11 +478,9 @@ class Downloader extends events_1.EventEmitter {
                                         fileName: newFilename
                                     });
                                     downloadedPaths.push(finalPath);
-                                    continue;
+                                    return;
                                 }
-                                // Descargar el archivo
                                 console.log(`Downloading: ${originalFilename} as ${newFilename}`);
-                                // Emitir evento de descarga en progreso
                                 this.emit('downloadProgress', {
                                     url: videoUrl,
                                     tag,
@@ -498,15 +493,12 @@ class Downloader extends events_1.EventEmitter {
                                     responseType: 'stream',
                                     headers: this.headers
                                 });
-                                // Obtener el tamaño total del archivo (si está disponible)
                                 const totalSize = parseInt(response.headers['content-length'] || '0', 10);
                                 let downloadedSize = 0;
                                 let lastProgress = 0;
                                 const writer = fs.createWriteStream(finalPath);
-                                // Monitorizar el progreso de la descarga
                                 response.data.on('data', (chunk) => {
                                     downloadedSize += chunk.length;
-                                    // Reportar progreso cada 5%
                                     if (totalSize > 0) {
                                         const progress = Math.floor((downloadedSize / totalSize) * 100);
                                         if (progress >= lastProgress + 5) {
@@ -522,12 +514,10 @@ class Downloader extends events_1.EventEmitter {
                                     }
                                 });
                                 response.data.pipe(writer);
-                                // Esperar a que termine la descarga
                                 yield new Promise((resolve, reject) => {
                                     writer.on('finish', () => {
                                         console.log(`Saved as: ${newFilename}`);
                                         this.videoCounter += 1;
-                                        // Emitir evento de descarga completada
                                         this.emit('downloadComplete', {
                                             url: videoUrl,
                                             tag,
@@ -541,7 +531,6 @@ class Downloader extends events_1.EventEmitter {
                                     });
                                     writer.on('error', (err) => {
                                         console.error('Error downloading video:', err);
-                                        // Emitir evento de error
                                         this.emit('downloadError', {
                                             url: videoUrl,
                                             tag,
@@ -552,7 +541,7 @@ class Downloader extends events_1.EventEmitter {
                                     });
                                 });
                                 downloadedPaths.push(finalPath);
-                                yield this.sleep(100); // Short pause between downloads
+                                yield this.sleep(100);
                             }
                         }
                         catch (postError) {
@@ -564,7 +553,8 @@ class Downloader extends events_1.EventEmitter {
                                 message: `Error procesando post: ${postError.message}`
                             });
                         }
-                    }
+                    })));
+                    yield Promise.all(tasks);
                     page += 1;
                     yield this.sleep(200); // Short pause between pages
                 }

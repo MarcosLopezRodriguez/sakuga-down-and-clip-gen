@@ -58,8 +58,8 @@ const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
 const child_process_1 = require("child_process");
 class SakugaDownAndClipGen {
-    constructor(downloadDirectory = 'output/downloads', clipDirectory = 'output/clips', randomNamesDirectory = 'output/random_names', tempAudioDirectory = 'output/temp_audio', beatSyncedVideosDirectory = 'output/beat_synced_videos', port = 3000) {
-        this.downloader = new downloader_1.Downloader('https://www.sakugabooru.com', downloadDirectory);
+    constructor(downloadDirectory = 'output/downloads', clipDirectory = 'output/clips', randomNamesDirectory = 'output/random_names', tempAudioDirectory = 'output/temp_audio', beatSyncedVideosDirectory = 'output/beat_synced_videos', port = 3000, concurrency = 3) {
+        this.downloader = new downloader_1.Downloader('https://www.sakugabooru.com', downloadDirectory, concurrency);
         this.clipGenerator = new clipGenerator_1.ClipGenerator(clipDirectory); // FFMPEG_PATH and FFPROBE_PATH are resolved within ClipGenerator
         // Define FFMPEG paths locally
         const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';

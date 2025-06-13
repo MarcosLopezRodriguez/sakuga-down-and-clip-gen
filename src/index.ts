@@ -122,6 +122,12 @@ yargs(hideBin(process.argv))
                 type: 'string',
                 default: 'output/downloads'
             })
+            .option('concurrency', {
+                alias: 'c',
+                describe: 'Número máximo de descargas simultáneas',
+                type: 'number',
+                default: 3
+            })
             .check((argv) => {
                 if (!argv.url && !argv['tags-file']) {
                     throw new Error('Debe proporcionar una URL o un archivo de etiquetas');
@@ -130,7 +136,15 @@ yargs(hideBin(process.argv))
             });
     }, async (argv) => {
         try {
-            const app = new SakugaDownAndClipGen(argv.output as string);
+            const app = new SakugaDownAndClipGen(
+                argv.output as string,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                argv.concurrency as number
+            );
 
             if (argv['tags-file']) {
                 console.log(`Procesando archivo de etiquetas: ${argv['tags-file']}`);
@@ -264,6 +278,12 @@ yargs(hideBin(process.argv))
                 type: 'string',
                 default: 'output/clips'
             })
+            .option('concurrency', {
+                alias: 'c',
+                describe: 'Número máximo de descargas simultáneas',
+                type: 'number',
+                default: 3
+            })
             .option('min-duration', {
                 describe: 'Duración mínima de los clips (segundos)',
                 type: 'number',
@@ -294,7 +314,12 @@ yargs(hideBin(process.argv))
         try {
             const app = new SakugaDownAndClipGen(
                 argv['download-dir'] as string,
-                argv['clips-dir'] as string
+                argv['clips-dir'] as string,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                argv.concurrency as number
             );
 
             const sceneOptions = {

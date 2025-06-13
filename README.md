@@ -127,6 +127,8 @@ Puedes ejecutar los comandos de la CLI usando `node dist/index.js <comando> [opc
 
 Para obtener ayuda sobre cualquier comando y ver todas las opciones disponibles, usa la bandera `--help` (ej: `node dist/index.js download --help`).
 
+La mayoría de los comandos de descarga aceptan `--concurrency` para controlar cuántos archivos se descargan simultáneamente (por defecto 3).
+
 **Ejemplos básicos:**
 
 *   **Descargar videos por URL o etiqueta:**
@@ -136,6 +138,9 @@ Para obtener ayuda sobre cualquier comando y ver todas las opciones disponibles,
 
     # Descargar videos con una etiqueta específica
     node dist/index.js download "https://sakugabooru.com/post?tags=sword_fight"
+
+    # Limitar a 5 descargas simultáneas
+    node dist/index.js download "https://sakugabooru.com/post?tags=sword_fight" --concurrency 5
 
     # Descargar videos usando un archivo de etiquetas (tags.txt contiene "sword_fight;magic_effects")
     node dist/index.js download --tags-file ./tags.txt --output ./mis_videos

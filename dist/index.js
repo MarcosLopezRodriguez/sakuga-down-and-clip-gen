@@ -154,6 +154,12 @@ function processDownloadedVideos(category_1) {
         type: 'string',
         default: 'output/downloads'
     })
+        .option('concurrency', {
+        alias: 'c',
+        describe: 'Número máximo de descargas simultáneas',
+        type: 'number',
+        default: 3
+    })
         .check((argv) => {
         if (!argv.url && !argv['tags-file']) {
             throw new Error('Debe proporcionar una URL o un archivo de etiquetas');
@@ -162,7 +168,7 @@ function processDownloadedVideos(category_1) {
     });
 }, (argv) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const app = new app_1.SakugaDownAndClipGen(argv.output);
+        const app = new app_1.SakugaDownAndClipGen(argv.output, undefined, undefined, undefined, undefined, undefined, argv.concurrency);
         if (argv['tags-file']) {
             console.log(`Procesando archivo de etiquetas: ${argv['tags-file']}`);
             yield app['downloader'].processTagsFromFile(argv['tags-file']);
@@ -281,6 +287,12 @@ function processDownloadedVideos(category_1) {
         type: 'string',
         default: 'output/clips'
     })
+        .option('concurrency', {
+        alias: 'c',
+        describe: 'Número máximo de descargas simultáneas',
+        type: 'number',
+        default: 3
+    })
         .option('min-duration', {
         describe: 'Duración mínima de los clips (segundos)',
         type: 'number',
@@ -309,7 +321,7 @@ function processDownloadedVideos(category_1) {
     });
 }, (argv) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const app = new app_1.SakugaDownAndClipGen(argv['download-dir'], argv['clips-dir']);
+        const app = new app_1.SakugaDownAndClipGen(argv['download-dir'], argv['clips-dir'], undefined, undefined, undefined, undefined, argv.concurrency);
         const sceneOptions = {
             minDuration: argv['min-duration'],
             maxDuration: argv['max-duration'],

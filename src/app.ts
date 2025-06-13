@@ -36,9 +36,10 @@ export class SakugaDownAndClipGen {
         randomNamesDirectory: string = 'output/random_names',
         tempAudioDirectory: string = 'output/temp_audio',
         beatSyncedVideosDirectory: string = 'output/beat_synced_videos',
-        port: number = 3000
+        port: number = 3000,
+        concurrency: number = 3
     ) {
-        this.downloader = new Downloader('https://www.sakugabooru.com', downloadDirectory);
+        this.downloader = new Downloader('https://www.sakugabooru.com', downloadDirectory, concurrency);
         this.clipGenerator = new ClipGenerator(clipDirectory); // FFMPEG_PATH and FFPROBE_PATH are resolved within ClipGenerator
 
         // Define FFMPEG paths locally
