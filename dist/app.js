@@ -76,8 +76,6 @@ class SakugaDownAndClipGen {
         this.app = (0, express_1.default)();
         this.server = http_1.default.createServer(this.app);
         this.io = new socket_io_1.Server(this.server);
-        // Configurar WebSockets para actualizaciones en tiempo real
-        this.setupWebSockets();
         // Asegurar que los directorios existan
         if (!fs.existsSync(downloadDirectory)) {
             fs.mkdirSync(downloadDirectory, { recursive: true });
@@ -120,6 +118,8 @@ class SakugaDownAndClipGen {
         });
         this.queryUpload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
         this.imageDownloader = new imageDownloader_1.ImageDownloader(path.join(this.downloadDirectory, 'images'));
+        // Configurar WebSockets para actualizaciones en tiempo real
+        this.setupWebSockets();
         this.setupExpressApp();
     }
     /**

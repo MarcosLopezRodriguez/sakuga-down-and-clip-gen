@@ -61,9 +61,6 @@ export class SakugaDownAndClipGen {
         this.server = http.createServer(this.app);
         this.io = new Server(this.server);
 
-        // Configurar WebSockets para actualizaciones en tiempo real
-        this.setupWebSockets();
-
         // Asegurar que los directorios existan
         if (!fs.existsSync(downloadDirectory)) {
             fs.mkdirSync(downloadDirectory, { recursive: true });
@@ -112,6 +109,9 @@ export class SakugaDownAndClipGen {
 
         this.queryUpload = multer({ storage: multer.memoryStorage() });
         this.imageDownloader = new ImageDownloader(path.join(this.downloadDirectory, 'images'));
+
+        // Configurar WebSockets para actualizaciones en tiempo real
+        this.setupWebSockets();
 
         this.setupExpressApp();
     }
