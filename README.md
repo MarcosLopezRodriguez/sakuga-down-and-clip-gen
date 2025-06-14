@@ -108,6 +108,7 @@ Una aplicación para descargar videos de Sakugabooru y generar clips automática
 3. Usar la sección 'Descargar Imágenes' para buscar en Google y descargar imágenes.
    - Introduce la consulta manualmente o sube un archivo de consultas.
    - Selecciona cuántas imágenes descargar (10, 25 o 50).
+   - Las imágenes se guardarán en la carpeta `images/` con nombres únicos y la extensión adecuada.
    - Usa el botón "Buscar siguientes" para descargar el siguiente bloque de resultados.
 4. Utilizar la sección 'Generar clips' para procesar los videos descargados:
     - Configurar duración mínima y máxima de los clips.

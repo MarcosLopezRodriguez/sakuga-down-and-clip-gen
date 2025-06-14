@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as cheerio from 'cheerio';
 import { EventEmitter } from 'events';
+import mime from 'mime-types';
 
 export interface ImageDownloadedEvent {
     path: string;
@@ -38,12 +39,19 @@ export class ImageDownloader extends EventEmitter {
         const paths: string[] = [];
         for (const imageUrl of imageUrls) {
             const urlObj = new URL(imageUrl);
-            const fileName = path.basename(urlObj.pathname.split('?')[0]);
-            const finalPath = path.join(this.outputDirectory, fileName);
+            let fileName = path.basename(urlObj.pathname.split('?')[0]);
             const res = await axios.get(imageUrl, {
                 responseType: 'stream',
                 headers: { 'User-Agent': 'Mozilla/5.0' }
             });
+            let ext = path.extname(fileName);
+            if (!ext) {
+                const mimeExt = mime.extension(res.headers['content-type'] || '');
+                ext = mimeExt ? `.${mimeExt}` : '.jpg';
+            }
+            const base = path.basename(fileName, path.extname(fileName)) || 'image';
+            fileName = `${base}-${Date.now()}${ext}`;
+            const finalPath = path.join(this.outputDirectory, fileName);
             const writer = fs.createWriteStream(finalPath);
             res.data.pipe(writer);
             await new Promise<void>((resolve, reject) => {

@@ -51,6 +51,7 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const cheerio = __importStar(require("cheerio"));
 const events_1 = require("events");
+const mime_types_1 = __importDefault(require("mime-types"));
 class ImageDownloader extends events_1.EventEmitter {
     constructor(outputDirectory = 'images') {
         super();
@@ -80,12 +81,19 @@ class ImageDownloader extends events_1.EventEmitter {
             const paths = [];
             for (const imageUrl of imageUrls) {
                 const urlObj = new URL(imageUrl);
-                const fileName = path.basename(urlObj.pathname.split('?')[0]);
-                const finalPath = path.join(this.outputDirectory, fileName);
+                let fileName = path.basename(urlObj.pathname.split('?')[0]);
                 const res = yield axios_1.default.get(imageUrl, {
                     responseType: 'stream',
                     headers: { 'User-Agent': 'Mozilla/5.0' }
                 });
+                let ext = path.extname(fileName);
+                if (!ext) {
+                    const mimeExt = mime_types_1.default.extension(res.headers['content-type'] || '');
+                    ext = mimeExt ? `.${mimeExt}` : '.jpg';
+                }
+                const base = path.basename(fileName, path.extname(fileName)) || 'image';
+                fileName = `${base}-${Date.now()}${ext}`;
+                const finalPath = path.join(this.outputDirectory, fileName);
                 const writer = fs.createWriteStream(finalPath);
                 res.data.pipe(writer);
                 yield new Promise((resolve, reject) => {
