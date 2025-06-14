@@ -7,14 +7,16 @@ import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import ClipGenerator from './clipGenerator';
 import Downloader from './downloader';
+import ImageDownloader from './imageDownloader';
 
 // Rutas principales
 const OUTPUT_DIR = path.join(process.cwd(), 'output');
 const DOWNLOADS_DIR = path.join(OUTPUT_DIR, 'downloads');
 const CLIPS_DIR = path.join(OUTPUT_DIR, 'clips');
+const IMAGES_DIR = path.join(OUTPUT_DIR, 'images');
 
 // Asegurarse de que los directorios existan
-[OUTPUT_DIR, DOWNLOADS_DIR, CLIPS_DIR].forEach(dir => {
+[OUTPUT_DIR, DOWNLOADS_DIR, CLIPS_DIR, IMAGES_DIR].forEach(dir => {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
     }
@@ -23,13 +25,16 @@ const CLIPS_DIR = path.join(OUTPUT_DIR, 'clips');
 // Inicializar componentes
 const downloader = new Downloader(DOWNLOADS_DIR);
 const clipGenerator = new ClipGenerator(CLIPS_DIR);
+const imageDownloader = new ImageDownloader(IMAGES_DIR);
 
 // Exportar funcionalidades principales
 export {
     downloader,
     clipGenerator,
+    imageDownloader,
     DOWNLOADS_DIR,
-    CLIPS_DIR
+    CLIPS_DIR,
+    IMAGES_DIR
 };
 
 // Función principal que replica la funcionalidad del script Python
@@ -152,6 +157,58 @@ yargs(hideBin(process.argv))
             }
 
             console.log('Descarga completada!');
+        } catch (error) {
+            console.error('Error:', error);
+            process.exit(1);
+        }
+    })
+
+    // Comando para descargar imágenes desde Unsplash
+    .command('download-images [query]', 'Descargar imágenes desde Unsplash', (yargs) => {
+        return yargs
+            .positional('query', {
+                describe: 'Búsqueda o etiqueta',
+                type: 'string'
+            })
+            .option('queries-file', {
+                alias: 'q',
+                describe: 'Archivo de texto con búsquedas separadas por punto y coma',
+                type: 'string'
+            })
+            .option('count', {
+                alias: 'n',
+                describe: 'Número de imágenes por búsqueda',
+                type: 'number',
+                default: 10
+            })
+            .option('output', {
+                alias: 'o',
+                describe: 'Directorio de salida para las imágenes',
+                type: 'string',
+                default: 'output/images'
+            })
+            .check((argv) => {
+                if (!argv.query && !argv['queries-file']) {
+                    throw new Error('Debe proporcionar una búsqueda o un archivo de búsquedas');
+                }
+                return true;
+            });
+    }, async (argv) => {
+        try {
+            const count = argv.count as number;
+            const outputDir = argv.output as string;
+            const downloader = new ImageDownloader(outputDir);
+
+            let queries: string[] = [];
+            if (argv['queries-file']) {
+                const content = fs.readFileSync(argv['queries-file'] as string, 'utf-8');
+                queries = content.split(';').map(q => q.trim()).filter(Boolean);
+            } else if (argv.query) {
+                queries = [argv.query as string];
+            }
+
+            await downloader.downloadFromQueries(queries, count);
+            console.log('Descarga de imágenes completada!');
         } catch (error) {
             console.error('Error:', error);
             process.exit(1);

@@ -12,7 +12,8 @@
     "dev": "ts-node src/index.ts",
     "download": "ts-node src/index.ts download",
     "generate": "ts-node src/index.ts generate-clips",
-    "download-and-clip": "ts-node src/index.ts download-and-clip"
+    "download-and-clip": "ts-node src/index.ts download-and-clip",
+    "download-images": "ts-node src/index.ts download-images"
   },
   "keywords": [
     "sakuga",

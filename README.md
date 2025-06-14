@@ -8,6 +8,9 @@ Una aplicación para descargar videos de Sakugabooru y generar clips automática
     *   Soporte para URLs de Sakugabooru (posts individuales y búsquedas por etiquetas).
     *   Compatible con URLs directas de archivos de video.
     *   Descarga de múltiples videos a partir de un listado de etiquetas en un archivo de texto (mediante CLI).
+*   **Descarga Masiva de Imágenes**:
+    *   Obtención rápida de recursos gráficos desde Unsplash utilizando búsquedas o listas de términos.
+    *   Soporte para descargar varias imágenes por cada término definido.
 *   **Potente Generación de Clips**:
     *   Detección de escenas configurable:
         *   Utiliza PySceneDetect (con FFmpeg como respaldo).
@@ -52,6 +55,9 @@ Una aplicación para descargar videos de Sakugabooru y generar clips automática
     - Necesario para la detección de beats en la función "Beat Sync".
     - Descargar e instalar las herramientas de línea de comandos de Aubio desde [aubio.org](https://aubio.org/download).
     - Asegúrate de que `aubioonset` (o la herramienta de Aubio utilizada para la detección de onsets/beats) esté accesible en el PATH del sistema.
+- **Unsplash Access Key**:
+    - Para descargar imágenes es necesario un token de acceso de Unsplash.
+    - Regístrate en [unsplash.com/developers](https://unsplash.com/developers) y configura la variable de entorno `UNSPLASH_ACCESS_KEY` con tu clave.
 
 ## Instalación
 
@@ -155,6 +161,15 @@ Para obtener ayuda sobre cualquier comando y ver todas las opciones disponibles,
     node dist/index.js download-and-clip --url "https://sakugabooru.com/post?tags=impact_frames" --clips-dir ./mis_clips_de_impacto
     ```
 
+*   **Descargar imágenes desde Unsplash:**
+    ```bash
+    # Descargar 20 imágenes relacionadas con "atardecer"
+    node dist/index.js download-images atardecer --count 20
+
+    # Usar un archivo con varias búsquedas separadas por punto y coma
+    node dist/index.js download-images --queries-file ./busquedas.txt
+    ```
+
 ## Estructura del Proyecto
 
 ```
@@ -172,6 +187,7 @@ Para obtener ayuda sobre cualquier comando y ver todas las opciones disponibles,
 │   ├── downloads/        # Videos descargados
 │   ├── clips/            # Clips generados, organizados en subcarpetas
 │   ├── beat_synced_videos/ # Videos generados con la función Beat Sync
+│   ├── images/          # Imágenes descargadas de Unsplash
 │   ├── temp_audio/       # Archivos de audio temporales subidos para análisis
 │   └── temp/             # Archivos temporales de procesamiento (ej: segmentos de video)
 └── assets/             # Recursos adicionales (si los hubiera)
