@@ -47,7 +47,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 var _a;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CLIPS_DIR = exports.DOWNLOADS_DIR = exports.clipGenerator = exports.downloader = void 0;
+exports.IMAGES_DIR = exports.CLIPS_DIR = exports.DOWNLOADS_DIR = exports.imageDownloader = exports.clipGenerator = exports.downloader = void 0;
 exports.processVideosToPythonClips = processVideosToPythonClips;
 exports.processDownloadedVideos = processDownloadedVideos;
 const app_1 = require("./app");
@@ -57,14 +57,17 @@ const yargs_1 = __importDefault(require("yargs"));
 const helpers_1 = require("yargs/helpers");
 const clipGenerator_1 = __importDefault(require("./clipGenerator"));
 const downloader_1 = __importDefault(require("./downloader"));
+const imageDownloader_1 = __importDefault(require("./imageDownloader"));
 // Rutas principales
 const OUTPUT_DIR = path.join(process.cwd(), 'output');
 const DOWNLOADS_DIR = path.join(OUTPUT_DIR, 'downloads');
 exports.DOWNLOADS_DIR = DOWNLOADS_DIR;
 const CLIPS_DIR = path.join(OUTPUT_DIR, 'clips');
 exports.CLIPS_DIR = CLIPS_DIR;
+const IMAGES_DIR = path.join(OUTPUT_DIR, 'images');
+exports.IMAGES_DIR = IMAGES_DIR;
 // Asegurarse de que los directorios existan
-[OUTPUT_DIR, DOWNLOADS_DIR, CLIPS_DIR].forEach(dir => {
+[OUTPUT_DIR, DOWNLOADS_DIR, CLIPS_DIR, IMAGES_DIR].forEach(dir => {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
     }
@@ -74,6 +77,8 @@ const downloader = new downloader_1.default(DOWNLOADS_DIR);
 exports.downloader = downloader;
 const clipGenerator = new clipGenerator_1.default(CLIPS_DIR);
 exports.clipGenerator = clipGenerator;
+const imageDownloader = new imageDownloader_1.default(IMAGES_DIR);
+exports.imageDownloader = imageDownloader;
 // Función principal que replica la funcionalidad del script Python
 function processVideosToPythonClips(inputDir_1) {
     return __awaiter(this, arguments, void 0, function* (inputDir, options = { minDuration: 1.0, maxDuration: 2.99 }) {
@@ -184,6 +189,57 @@ function processDownloadedVideos(category_1) {
             }
         }
         console.log('Descarga completada!');
+    }
+    catch (error) {
+        console.error('Error:', error);
+        process.exit(1);
+    }
+}))
+    // Comando para descargar imágenes desde Unsplash
+    .command('download-images [query]', 'Descargar imágenes desde Unsplash', (yargs) => {
+    return yargs
+        .positional('query', {
+        describe: 'Búsqueda o etiqueta',
+        type: 'string'
+    })
+        .option('queries-file', {
+        alias: 'q',
+        describe: 'Archivo de texto con búsquedas separadas por punto y coma',
+        type: 'string'
+    })
+        .option('count', {
+        alias: 'n',
+        describe: 'Número de imágenes por búsqueda',
+        type: 'number',
+        default: 10
+    })
+        .option('output', {
+        alias: 'o',
+        describe: 'Directorio de salida para las imágenes',
+        type: 'string',
+        default: 'output/images'
+    })
+        .check((argv) => {
+        if (!argv.query && !argv['queries-file']) {
+            throw new Error('Debe proporcionar una búsqueda o un archivo de búsquedas');
+        }
+        return true;
+    });
+}, (argv) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const count = argv.count;
+        const outputDir = argv.output;
+        const downloader = new imageDownloader_1.default(outputDir);
+        let queries = [];
+        if (argv['queries-file']) {
+            const content = fs.readFileSync(argv['queries-file'], 'utf-8');
+            queries = content.split(';').map(q => q.trim()).filter(Boolean);
+        }
+        else if (argv.query) {
+            queries = [argv.query];
+        }
+        yield downloader.downloadFromQueries(queries, count);
+        console.log('Descarga de imágenes completada!');
     }
     catch (error) {
         console.error('Error:', error);
