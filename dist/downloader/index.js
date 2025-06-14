@@ -421,8 +421,94 @@ class Downloader extends events_1.EventEmitter {
             }
         });
     }
+    downloadPost(postUrl, tag, outputDir) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const videoUrl = yield this.getVideoUrlFromPost(postUrl);
+                if (!videoUrl)
+                    return;
+                const tagDir = path.join(outputDir, tag);
+                this.createDirectorySafely(tagDir);
+                const originalFilename = path.basename(videoUrl);
+                const originalExt = path.extname(originalFilename).toLowerCase();
+                const extension = ['.mp4', '.webm', '.mkv'].includes(originalExt) ? originalExt : '.mp4';
+                const fileNumber = this.videoCounter++;
+                const newFilename = `${tag}_${fileNumber}${extension}`;
+                const finalPath = path.join(tagDir, newFilename);
+                if (fs.existsSync(finalPath)) {
+                    console.log(`File already exists: ${newFilename}`);
+                    this.emit('downloadComplete', {
+                        url: videoUrl,
+                        tag,
+                        status: 'complete',
+                        message: `Archivo ya existe: ${newFilename}`,
+                        filePath: path.join(tag, newFilename).replace(/\\/g, '/'),
+                        fileSize: fs.statSync(finalPath).size,
+                        fileName: newFilename
+                    });
+                    return finalPath;
+                }
+                this.emit('downloadProgress', {
+                    url: videoUrl,
+                    tag,
+                    status: 'downloading',
+                    message: `Descargando: ${originalFilename} como ${newFilename}`
+                });
+                const response = yield (0, axios_1.default)({
+                    method: 'GET',
+                    url: videoUrl,
+                    responseType: 'stream',
+                    headers: this.headers
+                });
+                const totalSize = parseInt(response.headers['content-length'] || '0', 10);
+                let downloadedSize = 0;
+                let lastProgress = 0;
+                const writer = fs.createWriteStream(finalPath);
+                response.data.on('data', (chunk) => {
+                    downloadedSize += chunk.length;
+                    if (totalSize > 0) {
+                        const progress = Math.floor((downloadedSize / totalSize) * 100);
+                        if (progress >= lastProgress + 5) {
+                            lastProgress = progress;
+                            this.emit('downloadProgress', {
+                                url: videoUrl,
+                                tag,
+                                status: 'downloading',
+                                message: `Descargando: ${originalFilename} (${progress}%)`,
+                                progress
+                            });
+                        }
+                    }
+                });
+                response.data.pipe(writer);
+                yield new Promise((resolve, reject) => {
+                    writer.on('finish', resolve);
+                    writer.on('error', reject);
+                });
+                this.emit('downloadComplete', {
+                    url: videoUrl,
+                    tag,
+                    status: 'complete',
+                    message: `Guardado como: ${newFilename}`,
+                    filePath: path.join(tag, newFilename).replace(/\\/g, '/'),
+                    fileSize: fs.statSync(finalPath).size,
+                    fileName: newFilename
+                });
+                return finalPath;
+            }
+            catch (err) {
+                console.error(`Error processing post ${postUrl}:`, err);
+                this.emit('downloadError', {
+                    url: postUrl,
+                    tag,
+                    status: 'error',
+                    message: `Error procesando post: ${err.message}`
+                });
+            }
+        });
+    }
     downloadVideosFromTag(tagUrl_1) {
-        return __awaiter(this, arguments, void 0, function* (tagUrl, outputDir = this.outputDirectory) {
+        return __awaiter(this, arguments, void 0, function* (tagUrl, outputDir = this.outputDirectory, concurrency = 3) {
             this.videoCounter = 1; // Reset counter for new tag
             const tag = this.getTagFromUrl(tagUrl);
             let page = 1;
@@ -433,137 +519,35 @@ class Downloader extends events_1.EventEmitter {
             try {
                 while (true) {
                     const currentUrl = `${tagUrl}&page=${page}`;
+                    const postUrls = yield this.getVideoPostsFromPage(currentUrl);
+                    if (!postUrls.length) {
+                        break;
+                    }
                     console.log(`Processing page ${page}...`);
-                    // Emitir evento de progreso
+                    // Emitir evento de progreso solo si hay resultados
                     this.emit('downloadProgress', {
                         url: tagUrl,
                         tag,
                         status: 'searching',
                         message: `Procesando página ${page}...`
                     });
-                    const postUrls = yield this.getVideoPostsFromPage(currentUrl);
-                    if (!postUrls.length) {
-                        break;
-                    }
                     // Emitir evento con los posts encontrados
                     this.emit('postsFound', {
                         tag,
                         count: postUrls.length,
                         message: `Encontrados ${postUrls.length} posts en página ${page}`
                     });
-                    for (const postUrl of postUrls) {
-                        try {
-                            const videoUrl = yield this.getVideoUrlFromPost(postUrl);
-                            if (videoUrl) {
-                                // Crear directorio específico para el tag de forma segura
-                                const tagDir = path.join(outputDir, tag);
-                                this.createDirectorySafely(tagDir);
-                                // Obtener extensión del archivo original
-                                const originalFilename = path.basename(videoUrl);
-                                const originalExt = path.extname(originalFilename).toLowerCase();
-                                // Usar mp4 como formato por defecto, pero respetar la extensión original si es un formato de video
-                                const extension = ['.mp4', '.webm', '.mkv'].includes(originalExt) ? originalExt : '.mp4';
-                                // Crear nombre de archivo siguiendo el formato tag_número
-                                const newFilename = `${tag}_${this.videoCounter}${extension}`;
-                                const finalPath = path.join(tagDir, newFilename);
-                                // Verificar si el archivo ya existe
-                                if (fs.existsSync(finalPath)) {
-                                    console.log(`File already exists: ${newFilename}`);
-                                    this.videoCounter += 1;
-                                    // Emitir evento de descarga completada (para archivos que ya existen)
-                                    this.emit('downloadComplete', {
-                                        url: videoUrl,
-                                        tag,
-                                        status: 'complete',
-                                        message: `Archivo ya existe: ${newFilename}`,
-                                        filePath: path.join(tag, newFilename).replace(/\\/g, '/'),
-                                        fileSize: fs.statSync(finalPath).size,
-                                        fileName: newFilename
-                                    });
-                                    downloadedPaths.push(finalPath);
-                                    continue;
-                                }
-                                // Descargar el archivo
-                                console.log(`Downloading: ${originalFilename} as ${newFilename}`);
-                                // Emitir evento de descarga en progreso
-                                this.emit('downloadProgress', {
-                                    url: videoUrl,
-                                    tag,
-                                    status: 'downloading',
-                                    message: `Descargando: ${originalFilename} como ${newFilename}`
-                                });
-                                const response = yield (0, axios_1.default)({
-                                    method: 'GET',
-                                    url: videoUrl,
-                                    responseType: 'stream',
-                                    headers: this.headers
-                                });
-                                // Obtener el tamaño total del archivo (si está disponible)
-                                const totalSize = parseInt(response.headers['content-length'] || '0', 10);
-                                let downloadedSize = 0;
-                                let lastProgress = 0;
-                                const writer = fs.createWriteStream(finalPath);
-                                // Monitorizar el progreso de la descarga
-                                response.data.on('data', (chunk) => {
-                                    downloadedSize += chunk.length;
-                                    // Reportar progreso cada 5%
-                                    if (totalSize > 0) {
-                                        const progress = Math.floor((downloadedSize / totalSize) * 100);
-                                        if (progress >= lastProgress + 5) {
-                                            lastProgress = progress;
-                                            this.emit('downloadProgress', {
-                                                url: videoUrl,
-                                                tag,
-                                                status: 'downloading',
-                                                message: `Descargando: ${originalFilename} (${progress}%)`,
-                                                progress
-                                            });
-                                        }
-                                    }
-                                });
-                                response.data.pipe(writer);
-                                // Esperar a que termine la descarga
-                                yield new Promise((resolve, reject) => {
-                                    writer.on('finish', () => {
-                                        console.log(`Saved as: ${newFilename}`);
-                                        this.videoCounter += 1;
-                                        // Emitir evento de descarga completada
-                                        this.emit('downloadComplete', {
-                                            url: videoUrl,
-                                            tag,
-                                            status: 'complete',
-                                            message: `Guardado como: ${newFilename}`,
-                                            filePath: path.join(tag, newFilename).replace(/\\/g, '/'),
-                                            fileSize: fs.statSync(finalPath).size,
-                                            fileName: newFilename
-                                        });
-                                        resolve();
-                                    });
-                                    writer.on('error', (err) => {
-                                        console.error('Error downloading video:', err);
-                                        // Emitir evento de error
-                                        this.emit('downloadError', {
-                                            url: videoUrl,
-                                            tag,
-                                            status: 'error',
-                                            message: `Error en la descarga: ${err.message}`
-                                        });
-                                        reject(err);
-                                    });
-                                });
-                                downloadedPaths.push(finalPath);
-                                yield this.sleep(100); // Short pause between downloads
-                            }
+                    const batches = [];
+                    for (let i = 0; i < postUrls.length; i += concurrency) {
+                        batches.push(postUrls.slice(i, i + concurrency));
+                    }
+                    for (const batch of batches) {
+                        const results = yield Promise.all(batch.map(p => this.downloadPost(p, tag, outputDir)));
+                        for (const p of results) {
+                            if (p)
+                                downloadedPaths.push(p);
                         }
-                        catch (postError) {
-                            console.error(`Error processing post ${postUrl}:`, postError);
-                            this.emit('downloadError', {
-                                url: postUrl,
-                                tag,
-                                status: 'error',
-                                message: `Error procesando post: ${postError.message}`
-                            });
-                        }
+                        yield this.sleep(100);
                     }
                     page += 1;
                     yield this.sleep(200); // Short pause between pages
@@ -587,7 +571,7 @@ class Downloader extends events_1.EventEmitter {
         });
     }
     processTagsFromFile(tagsFilePath_1) {
-        return __awaiter(this, arguments, void 0, function* (tagsFilePath, outputDir = this.outputDirectory) {
+        return __awaiter(this, arguments, void 0, function* (tagsFilePath, outputDir = this.outputDirectory, concurrency = 3) {
             try {
                 if (!fs.existsSync(tagsFilePath)) {
                     throw new Error(`Tags file '${tagsFilePath}' not found.`);
@@ -604,7 +588,7 @@ class Downloader extends events_1.EventEmitter {
                         continue;
                     }
                     const tagUrl = `${this.baseUrl}/post?tags=${trimmedTag}`;
-                    const downloadedPaths = yield this.downloadVideosFromTag(tagUrl, outputDir);
+                    const downloadedPaths = yield this.downloadVideosFromTag(tagUrl, outputDir, concurrency);
                     allDownloadedPaths.push(...downloadedPaths);
                 }
                 return allDownloadedPaths;

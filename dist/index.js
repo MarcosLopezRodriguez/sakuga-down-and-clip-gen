@@ -154,6 +154,12 @@ function processDownloadedVideos(category_1) {
         type: 'string',
         default: 'output/downloads'
     })
+        .option('concurrency', {
+        alias: 'c',
+        describe: 'Número de descargas simultáneas',
+        type: 'number',
+        default: 3
+    })
         .check((argv) => {
         if (!argv.url && !argv['tags-file']) {
             throw new Error('Debe proporcionar una URL o un archivo de etiquetas');
@@ -163,13 +169,19 @@ function processDownloadedVideos(category_1) {
 }, (argv) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const app = new app_1.SakugaDownAndClipGen(argv.output);
+        const concurrency = argv.concurrency;
         if (argv['tags-file']) {
             console.log(`Procesando archivo de etiquetas: ${argv['tags-file']}`);
-            yield app['downloader'].processTagsFromFile(argv['tags-file']);
+            yield app['downloader'].processTagsFromFile(argv['tags-file'], argv.output, concurrency);
         }
         else if (argv.url) {
             console.log(`Descargando video desde: ${argv.url}`);
-            yield app['downloader'].downloadVideo(argv.url);
+            if (argv.url.includes('tags=')) {
+                yield app['downloader'].downloadVideosFromTag(argv.url, argv.output, concurrency);
+            }
+            else {
+                yield app['downloader'].downloadVideo(argv.url);
+            }
         }
         console.log('Descarga completada!');
     }

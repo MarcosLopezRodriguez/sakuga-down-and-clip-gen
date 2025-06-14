@@ -122,6 +122,12 @@ yargs(hideBin(process.argv))
                 type: 'string',
                 default: 'output/downloads'
             })
+            .option('concurrency', {
+                alias: 'c',
+                describe: 'Número de descargas simultáneas',
+                type: 'number',
+                default: 3
+            })
             .check((argv) => {
                 if (!argv.url && !argv['tags-file']) {
                     throw new Error('Debe proporcionar una URL o un archivo de etiquetas');
@@ -131,13 +137,18 @@ yargs(hideBin(process.argv))
     }, async (argv) => {
         try {
             const app = new SakugaDownAndClipGen(argv.output as string);
+            const concurrency = argv.concurrency as number;
 
             if (argv['tags-file']) {
                 console.log(`Procesando archivo de etiquetas: ${argv['tags-file']}`);
-                await app['downloader'].processTagsFromFile(argv['tags-file'] as string);
+                await app['downloader'].processTagsFromFile(argv['tags-file'] as string, argv.output as string, concurrency);
             } else if (argv.url) {
                 console.log(`Descargando video desde: ${argv.url}`);
-                await app['downloader'].downloadVideo(argv.url as string);
+                if (argv.url.includes('tags=')) {
+                    await app['downloader'].downloadVideosFromTag(argv.url as string, argv.output as string, concurrency);
+                } else {
+                    await app['downloader'].downloadVideo(argv.url as string);
+                }
             }
 
             console.log('Descarga completada!');
