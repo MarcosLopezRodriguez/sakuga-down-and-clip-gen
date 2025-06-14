@@ -90,6 +90,29 @@ document.addEventListener('DOMContentLoaded', () => {
         await startDownload({ tags });
     });
 
+    // Download images form submission
+    const downloadImagesForm = document.getElementById('downloadImagesForm');
+    if (downloadImagesForm) {
+        downloadImagesForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const query = document.getElementById('imageQuery').value.trim();
+            const fileInput = document.getElementById('queriesFile');
+            const formData = new FormData();
+            if (query) formData.append('query', query);
+            if (fileInput && fileInput.files.length > 0) {
+                formData.append('queriesFile', fileInput.files[0]);
+            }
+            const response = await fetch('/api/download-images', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+            if (result && result.message) {
+                document.getElementById('imageDownloadStatus').textContent = result.message;
+            }
+        });
+    }
+
     // Generate clips form submission
     document.getElementById('generateClipsForm').addEventListener('submit', async (e) => {
         e.preventDefault();

@@ -52,6 +52,7 @@ const downloader_1 = require("./downloader");
 const clipGenerator_1 = require("./clipGenerator");
 const audioAnalyzer_1 = require("./audioAnalyzer");
 const beatSyncGenerator_1 = require("./beatSyncGenerator");
+const imageDownloader_1 = require("./imageDownloader");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const http_1 = __importDefault(require("http"));
@@ -117,6 +118,8 @@ class SakugaDownAndClipGen {
             },
             fileFilter: fileFilter
         });
+        this.queryUpload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
+        this.imageDownloader = new imageDownloader_1.ImageDownloader(path.join(this.downloadDirectory, 'images'));
         this.setupExpressApp();
     }
     /**
@@ -169,6 +172,8 @@ class SakugaDownAndClipGen {
         this.app.post('/api/download', this.handlePostDownload.bind(this));
         // API para descargar por etiquetas
         this.app.post('/api/download-by-tags', this.handlePostDownloadByTags.bind(this));
+        // API para descargar imágenes
+        this.app.post('/api/download-images', this.queryUpload.single('queriesFile'), this.handlePostDownloadImages.bind(this));
         // API para generar clips de un video
         this.app.post('/api/generate-clips', this.handlePostGenerateClips.bind(this));
         // API para generar clips de todos los videos en una carpeta
@@ -247,6 +252,38 @@ class SakugaDownAndClipGen {
             }
             catch (error) {
                 // Si ya se envió la respuesta, notificar el error por WebSocket
+                if (res.headersSent) {
+                    this.io.emit('downloadError', { error: error.message });
+                }
+                else {
+                    res.status(500).json({ error: error.message });
+                }
+            }
+        });
+    }
+    handlePostDownloadImages(req, res) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const queries = [];
+                if (req.body.query) {
+                    queries.push(String(req.body.query).trim());
+                }
+                if (req.file && req.file.buffer) {
+                    const fileContent = req.file.buffer.toString('utf-8');
+                    fileContent.split(/\r?\n/).forEach(q => {
+                        const t = q.trim();
+                        if (t)
+                            queries.push(t);
+                    });
+                }
+                if (queries.length === 0) {
+                    res.status(400).json({ error: 'No se proporcionaron consultas válidas' });
+                    return;
+                }
+                res.json({ success: true, message: 'Descarga de imágenes iniciada' });
+                yield this.imageDownloader.processQueries(queries);
+            }
+            catch (error) {
                 if (res.headersSent) {
                     this.io.emit('downloadError', { error: error.message });
                 }

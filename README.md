@@ -105,14 +105,15 @@ Una aplicación para descargar videos de Sakugabooru y generar clips automática
 2. Usar la sección 'Descargar' para obtener videos de Sakugabooru:
     - Por URL directa.
     - Por etiquetas (separadas por punto y coma).
-3. Utilizar la sección 'Generar clips' para procesar los videos descargados:
+3. Usar la sección 'Descargar Imágenes' para obtener imágenes según una consulta o un archivo de consultas.
+4. Utilizar la sección 'Generar clips' para procesar los videos descargados:
     - Configurar duración mínima y máxima de los clips.
     - Ajustar el umbral de detección de cambios de escena.
-4. Ver y gestionar los clips generados en la sección 'Explorador':
+5. Ver y gestionar los clips generados en la sección 'Explorador':
     - Los clips se reproducen automáticamente al pasar el cursor (en algunos navegadores).
     - Eliminar clips no deseados con el botón de borrado.
-5. Utilizar la sección 'Renombrar Clips' para procesar y renombrar clips existentes en nuevas carpetas.
-6. Experimenta con la función 'Beat Sync':
+6. Utilizar la sección 'Renombrar Clips' para procesar y renombrar clips existentes en nuevas carpetas.
+7. Experimenta con la función 'Beat Sync':
     - Navega a la pestaña "Beat Sync".
     - Sube un archivo de audio (MP3, WAV). La duración se detectará y mostrará.
     - Define los tiempos de inicio y fin del segmento de audio que deseas utilizar para la sincronización.

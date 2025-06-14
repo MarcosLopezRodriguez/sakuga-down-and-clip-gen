@@ -35,6 +35,9 @@
                     <li class="nav-item">
                         <a class="nav-link" href="#" data-section="beat-sync">Beat Sync</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-section="download-images">Descargar Imágenes</a>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -333,6 +336,37 @@
             </div>
         </section>
 
+        <!-- Sección de descarga de imágenes -->
+        <section id="download-images" class="section-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Descargar Imágenes</h2>
+                </div>
+                <div class="card-body">
+                    <form id="downloadImagesForm">
+                        <div class="mb-3">
+                            <label for="imageQuery" class="form-label">Consulta:</label>
+                            <input type="text" class="form-control" id="imageQuery" placeholder="ej: naruto" />
+                        </div>
+                        <div class="mb-3">
+                            <label for="queriesFile" class="form-label">Archivo de consultas (opcional):</label>
+                            <input type="file" class="form-control" id="queriesFile" accept=".txt" />
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-cloud-download"></i> Descargar Imágenes
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h3>Proceso de descarga</h3>
+                </div>
+                <div class="card-body">
+                    <div id="imageDownloadStatus">Sin descargas activas</div>
+                </div>
+            </div>
+        </section>
 
         <!-- Video player modal -->
         <div class="modal fade" id="videoPlayerModal" tabindex="-1" aria-hidden="true">

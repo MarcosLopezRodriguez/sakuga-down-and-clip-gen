@@ -4,6 +4,7 @@ import { Downloader } from './downloader';
 import { ClipGenerator } from './clipGenerator';
 import { AudioAnalyzer } from './audioAnalyzer';
 import { BeatSyncGenerator } from './beatSyncGenerator';
+import { ImageDownloader } from './imageDownloader';
 import * as path from 'path';
 import * as fs from 'fs';
 import http from 'http';
@@ -30,6 +31,8 @@ export class SakugaDownAndClipGen {
     private beatSyncGenerator: BeatSyncGenerator;
     private beatSyncedVideosDirectory: string;
     private upload: multer.Multer;
+    private queryUpload: multer.Multer;
+    private imageDownloader: ImageDownloader;
     constructor(
         downloadDirectory: string = 'output/downloads',
         clipDirectory: string = 'output/clips',
@@ -107,6 +110,9 @@ export class SakugaDownAndClipGen {
             fileFilter: fileFilter
         });
 
+        this.queryUpload = multer({ storage: multer.memoryStorage() });
+        this.imageDownloader = new ImageDownloader(path.join(this.downloadDirectory, 'images'));
+
         this.setupExpressApp();
     }
 
@@ -173,6 +179,9 @@ export class SakugaDownAndClipGen {
 
         // API para descargar por etiquetas
         this.app.post('/api/download-by-tags', this.handlePostDownloadByTags.bind(this));
+
+        // API para descargar imágenes
+        this.app.post('/api/download-images', this.queryUpload.single('queriesFile'), this.handlePostDownloadImages.bind(this));
 
         // API para generar clips de un video
         this.app.post('/api/generate-clips', this.handlePostGenerateClips.bind(this));
@@ -266,6 +275,34 @@ export class SakugaDownAndClipGen {
             // Las notificaciones se manejarán a través de WebSockets
         } catch (error: any) {
             // Si ya se envió la respuesta, notificar el error por WebSocket
+            if (res.headersSent) {
+                this.io.emit('downloadError', { error: error.message });
+            } else {
+                res.status(500).json({ error: error.message });
+            }
+        }
+    }
+
+    private async handlePostDownloadImages(req: RequestWithFile, res: express.Response): Promise<void> {
+        try {
+            const queries: string[] = [];
+            if (req.body.query) {
+                queries.push(String(req.body.query).trim());
+            }
+            if (req.file && req.file.buffer) {
+                const fileContent = req.file.buffer.toString('utf-8');
+                fileContent.split(/\r?\n/).forEach(q => {
+                    const t = q.trim();
+                    if (t) queries.push(t);
+                });
+            }
+            if (queries.length === 0) {
+                res.status(400).json({ error: 'No se proporcionaron consultas válidas' });
+                return;
+            }
+            res.json({ success: true, message: 'Descarga de imágenes iniciada' });
+            await this.imageDownloader.processQueries(queries);
+        } catch (error: any) {
             if (res.headersSent) {
                 this.io.emit('downloadError', { error: error.message });
             } else {
