@@ -2,11 +2,17 @@ import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
 import cheerio from 'cheerio';
+import { EventEmitter } from 'events';
 
-export class ImageDownloader {
+export interface ImageDownloadedEvent {
+    path: string;
+}
+
+export class ImageDownloader extends EventEmitter {
     private outputDirectory: string;
 
     constructor(outputDirectory: string = 'output/images') {
+        super();
         this.outputDirectory = outputDirectory;
         if (!fs.existsSync(this.outputDirectory)) {
             fs.mkdirSync(this.outputDirectory, { recursive: true });
@@ -34,14 +40,18 @@ export class ImageDownloader {
             const urlObj = new URL(imageUrl);
             const fileName = path.basename(urlObj.pathname.split('?')[0]);
             const finalPath = path.join(this.outputDirectory, fileName);
-            const res = await axios.get(imageUrl, { responseType: 'stream', headers: { 'User-Agent': 'Mozilla/5.0' } });
+            const res = await axios.get(imageUrl, {
+                responseType: 'stream',
+                headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
             const writer = fs.createWriteStream(finalPath);
             res.data.pipe(writer);
-            await new Promise((resolve, reject) => {
+            await new Promise<void>((resolve, reject) => {
                 writer.on('finish', resolve);
                 writer.on('error', reject);
             });
             paths.push(finalPath);
+            this.emit('imageDownloaded', { path: finalPath } as ImageDownloadedEvent);
         }
         return paths;
     }

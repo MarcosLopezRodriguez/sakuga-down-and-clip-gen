@@ -50,8 +50,10 @@ const axios_1 = __importDefault(require("axios"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const cheerio_1 = __importDefault(require("cheerio"));
-class ImageDownloader {
+const events_1 = require("events");
+class ImageDownloader extends events_1.EventEmitter {
     constructor(outputDirectory = 'output/images') {
+        super();
         this.outputDirectory = outputDirectory;
         if (!fs.existsSync(this.outputDirectory)) {
             fs.mkdirSync(this.outputDirectory, { recursive: true });
@@ -80,7 +82,10 @@ class ImageDownloader {
                 const urlObj = new URL(imageUrl);
                 const fileName = path.basename(urlObj.pathname.split('?')[0]);
                 const finalPath = path.join(this.outputDirectory, fileName);
-                const res = yield axios_1.default.get(imageUrl, { responseType: 'stream', headers: { 'User-Agent': 'Mozilla/5.0' } });
+                const res = yield axios_1.default.get(imageUrl, {
+                    responseType: 'stream',
+                    headers: { 'User-Agent': 'Mozilla/5.0' }
+                });
                 const writer = fs.createWriteStream(finalPath);
                 res.data.pipe(writer);
                 yield new Promise((resolve, reject) => {
@@ -88,6 +93,7 @@ class ImageDownloader {
                     writer.on('error', reject);
                 });
                 paths.push(finalPath);
+                this.emit('imageDownloaded', { path: finalPath });
             }
             return paths;
         });

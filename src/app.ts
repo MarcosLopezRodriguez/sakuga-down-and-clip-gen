@@ -145,6 +145,12 @@ export class SakugaDownAndClipGen {
             const downloads = this.getDirectoryContents(this.downloadDirectory);
             this.io.emit('directoriesUpdated', { type: 'downloads', contents: downloads });
         });
+
+        // Conectar eventos del ImageDownloader
+        this.imageDownloader.on('imageDownloaded', (info) => {
+            const relativePath = path.join('downloads', path.relative(this.downloadDirectory, info.path)).replace(/\\/g, '/');
+            this.io.emit('imageDownloaded', { path: relativePath });
+        });
     }
 
     /**

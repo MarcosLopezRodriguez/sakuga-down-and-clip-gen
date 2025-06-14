@@ -140,6 +140,27 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    socket.on('imageDownloaded', (data) => {
+        const listEl = document.getElementById('imageDownloadList');
+        if (!listEl) return;
+        const ext = data.path.split('.').pop().toLowerCase();
+        const src = `/${data.path}`;
+        let element;
+        if (ext === 'webm' || ext === 'mp4') {
+            element = document.createElement('video');
+            element.src = src;
+            element.controls = true;
+            element.width = 160;
+        } else {
+            element = document.createElement('img');
+            element.src = src;
+            element.width = 160;
+        }
+        element.classList.add('border');
+        listEl.appendChild(element);
+        document.getElementById('imageDownloadStatus').textContent = `Descargada: ${src}`;
+    });
+
     // Generate clips form submission
     document.getElementById('generateClipsForm').addEventListener('submit', async (e) => {
         e.preventDefault();
