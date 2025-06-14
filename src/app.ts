@@ -45,7 +45,7 @@ export class SakugaDownAndClipGen {
         const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
         const FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
 
-        this.audioAnalyzer = new AudioAnalyzer(FFMPEG_PATH);
+        this.audioAnalyzer = new AudioAnalyzer();
         this.beatSyncedVideosDirectory = beatSyncedVideosDirectory;
 
         this.beatSyncGenerator = new BeatSyncGenerator(FFMPEG_PATH, FFPROBE_PATH, this.beatSyncedVideosDirectory);
@@ -302,7 +302,7 @@ export class SakugaDownAndClipGen {
 
     private async handlePostGenerateClipsFromFolder(req: express.Request, res: express.Response): Promise<void> {
         try {
-            const { folderPath, minDuration, maxDuration, threshold, useFFmpeg } = req.body;
+            const { folderPath, minDuration, maxDuration, threshold } = req.body;
             if (!folderPath) {
                 res.status(400).json({ error: 'Se requiere la ruta de la carpeta' });
                 return;
@@ -341,8 +341,7 @@ export class SakugaDownAndClipGen {
                                 videoPath: fullPath,
                                 minDuration,
                                 maxDuration,
-                                threshold,
-                                useFFmpeg
+                                threshold
                             }
                         } as express.Request;
 
@@ -384,7 +383,7 @@ export class SakugaDownAndClipGen {
 
     private async handlePostDownloadAndClip(req: express.Request, res: express.Response): Promise<void> {
         try {
-            const { url, tags, minDuration, maxDuration, threshold, useFFmpeg } = req.body;
+            const { url, tags, minDuration, maxDuration, threshold } = req.body;
 
             if (!url && (!tags || !Array.isArray(tags) || tags.length === 0)) {
                 res.status(400).json({ error: 'Se requiere una URL o etiquetas válidas' });
@@ -394,8 +393,7 @@ export class SakugaDownAndClipGen {
             const sceneOptions = {
                 minDuration: minDuration || 1.0,
                 maxDuration: maxDuration || 3.0,
-                threshold: threshold || (useFFmpeg ? 0.3 : 30),
-                useFFmpegDetection: useFFmpeg || false
+                threshold: threshold || 30
             };
 
             let results: Map<string, string[]>;
@@ -833,13 +831,7 @@ export class SakugaDownAndClipGen {
             // 2. Generar clips del video descargado
             console.log(`Generando clips del video descargado: ${videoPath}`);
 
-            // Si no se proporcionan segmentos, detectar escenas automáticamente
-            if (timeSegments.length === 0) {
-                return await this.clipGenerator.detectScenesAndGenerateClips(videoPath);
-            }
-
-            const clipPaths = await this.clipGenerator.generateMultipleClips(videoPath, timeSegments);
-            return clipPaths;
+            return await this.clipGenerator.detectScenesAndGenerateClips(videoPath);
         } catch (error) {
             console.error('Error en el proceso de descarga y generación de clips:', error);
             throw error;
@@ -858,7 +850,6 @@ export class SakugaDownAndClipGen {
             minDuration?: number,
             maxDuration?: number,
             threshold?: number,
-            useFFmpegDetection?: boolean
         } = {}
     ): Promise<Map<string, string[]>> {
         const resultsMap = new Map<string, string[]>();
@@ -873,21 +864,10 @@ export class SakugaDownAndClipGen {
 
                 // Para cada video descargado, generar clips
                 for (const videoPath of videoPaths) {
-                    let clipPaths: string[];
-
-                    if (sceneOptions.useFFmpegDetection) {
-                        // Usar FFmpeg para detección de escenas
-                        clipPaths = await this.clipGenerator.detectScenesWithFFmpegAndGenerateClips(
-                            videoPath,
-                            sceneOptions
-                        );
-                    } else {
-                        // Usar PySceneDetect para detección de escenas
-                        clipPaths = await this.clipGenerator.detectScenesAndGenerateClips(
-                            videoPath,
-                            sceneOptions
-                        );
-                    }
+                    const clipPaths = await this.clipGenerator.detectScenesAndGenerateClips(
+                        videoPath,
+                        sceneOptions
+                    );
 
                     resultsMap.set(videoPath, clipPaths);
                 }
@@ -911,7 +891,6 @@ export class SakugaDownAndClipGen {
             minDuration?: number,
             maxDuration?: number,
             threshold?: number,
-            useFFmpegDetection?: boolean
         } = {}
     ): Promise<Map<string, string[]>> {
         try {
@@ -948,7 +927,6 @@ export class SakugaDownAndClipGen {
             minDuration?: number,
             maxDuration?: number,
             threshold?: number,
-            useFFmpegDetection?: boolean // Option to choose detection method
         } = {}
     ): Promise<Map<string, string[]>> { // Returns a map of original video paths to array of generated clip paths
         const resultsMap = new Map<string, string[]>(); // Initialize a map to store results
@@ -977,20 +955,10 @@ export class SakugaDownAndClipGen {
                         this.io.emit('clipGenerationStatus', { video: fullPath, status: 'processing' });
 
 
-                        let clipPaths: string[]; // Array to hold paths of generated clips
-
-                        // Choose scene detection method based on sceneOptions
-                        if (sceneOptions.useFFmpegDetection) {
-                            clipPaths = await this.clipGenerator.detectScenesWithFFmpegAndGenerateClips(
-                                fullPath,
-                                sceneOptions
-                            );
-                        } else {
-                            clipPaths = await this.clipGenerator.detectScenesAndGenerateClips(
-                                fullPath,
-                                sceneOptions
-                            );
-                        }
+                        const clipPaths = await this.clipGenerator.detectScenesAndGenerateClips(
+                            fullPath,
+                            sceneOptions
+                        );
                         this.io.emit('clipGenerationStatus', { video: fullPath, status: 'completed', clips: clipPaths.length });
                         resultsMap.set(fullPath, clipPaths); // Store the result in the map
                     }

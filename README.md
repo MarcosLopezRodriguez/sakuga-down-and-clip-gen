@@ -9,9 +9,7 @@ Una aplicación para descargar videos de Sakugabooru y generar clips automática
     *   Compatible con URLs directas de archivos de video.
     *   Descarga de múltiples videos a partir de un listado de etiquetas en un archivo de texto (mediante CLI).
 *   **Potente Generación de Clips**:
-    *   Detección de escenas configurable:
-        *   Utiliza PySceneDetect (con FFmpeg como respaldo).
-        *   Opción para usar FFmpeg directamente para la detección de escenas.
+    *   Detección de escenas con PySceneDetect.
     *   Procesa videos locales existentes en tu disco duro.
     *   Genera clips para todos los videos dentro de una carpeta específica (procesamiento por lotes).
     *   Parámetros ajustables: duración mínima/máxima de clips y umbral de detección de escenas.
@@ -44,10 +42,6 @@ Una aplicación para descargar videos de Sakugabooru y generar clips automática
 - **PySceneDetect**:
     - Se instala mediante pip: `pip install scenedetect[opencv]`
     - Asegúrate de que Python y pip estén en el PATH del sistema.
-- **FFmpeg**:
-    - Necesario para la generación de clips, videos Beat Sync y como motor de detección de escenas.
-    - Descargar desde [ffmpeg.org](https://ffmpeg.org/download.html).
-    - Debe estar accesible en el PATH del sistema, o puedes configurar la variable de entorno `FFMPEG_PATH` para apuntar al ejecutable `ffmpeg` y `FFPROBE_PATH` para `ffprobe`.
 - **Aubio**:
     - Necesario para la detección de beats en la función "Beat Sync".
     - Descargar e instalar las herramientas de línea de comandos de Aubio desde [aubio.org](https://aubio.org/download).
@@ -71,13 +65,12 @@ Una aplicación para descargar videos de Sakugabooru y generar clips automática
     npm run build
     ```
 
-4.  **Instala FFmpeg y PySceneDetect:**
+4.  **Instala PySceneDetect:**
     *   Asegúrate de tener Python 3.7+ instalado.
     *   Instala PySceneDetect:
         ```bash
         pip install scenedetect[opencv]
         ```
-    *   Descarga FFmpeg desde [ffmpeg.org](https://ffmpeg.org/download.html) y añádelo al PATH de tu sistema, o define las variables de entorno `FFMPEG_PATH` y `FFPROBE_PATH`.
 
 5.  **Instala Aubio (para Beat Sync):**
     *   Visita [aubio.org/download](https://aubio.org/download) y sigue las instrucciones de instalación para tu sistema operativo.
@@ -146,8 +139,8 @@ Para obtener ayuda sobre cualquier comando y ver todas las opciones disponibles,
     # Generar clips de un video específico
     node dist/index.js generate-clips ./mis_videos/mi_video.mp4 --output ./mis_clips
 
-    # Generar clips de todos los videos en un directorio, usando FFmpeg para detección
-    node dist/index.js generate-clips ./mis_videos/ --ffmpeg --min-duration 1.5 --max-duration 5.0
+    # Generar clips de todos los videos en un directorio
+    node dist/index.js generate-clips ./mis_videos/ --min-duration 1.5 --max-duration 5.0
     ```
 
 *   **Descargar y generar clips en un solo paso:**
@@ -165,7 +158,7 @@ Para obtener ayuda sobre cualquier comando y ver todas las opciones disponibles,
 │   ├── beatSyncGenerator/ # Lógica para la generación de videos sincronizados con beats
 │   ├── clipGenerator/    # Lógica para la generación de clips y detección de escenas
 │   ├── downloader/       # Lógica para la descarga de videos desde Sakugabooru
-│   ├── utils/            # Utilidades comunes (ej: manejo de FFmpeg)
+│   ├── utils/            # Utilidades comunes
 │   ├── app.ts            # Configuración principal de la aplicación Express y rutas API
 │   └── index.ts          # Punto de entrada de la aplicación (CLI y servidor)
 ├── output/             # Carpetas de almacenamiento generadas automáticamente
@@ -182,8 +175,8 @@ Para obtener ayuda sobre cualquier comando y ver todas las opciones disponibles,
 - **Frontend**: HTML, CSS, JavaScript (vanilla), Bootstrap 5
 - **Backend**: Node.js, Express.js, TypeScript
 - **Comunicación en tiempo real**: Socket.IO (para feedback de descargas y progreso)
-- **Procesamiento de video**: FFmpeg (cortar, concatenar, etc.)
-- **Detección de escenas**: PySceneDetect (con OpenCV) y FFmpeg
+- **Procesamiento de video**: PySceneDetect
+- **Detección de escenas**: PySceneDetect (con OpenCV)
 - **Análisis de Audio**: Aubio (para detección de beats)
 - **Gestión de dependencias**: npm
 - **Bundling/Compilación**: TypeScript Compiler (`tsc`)

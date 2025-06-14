@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
-import ClipGenerator from './clipGenerator';
+import ClipGenerator, { SceneDetectionOptions } from './clipGenerator';
 import Downloader from './downloader';
 
 // Rutas principales
@@ -35,15 +35,20 @@ export {
 // Función principal que replica la funcionalidad del script Python
 export async function processVideosToPythonClips(
     inputDir: string,
-    options = { minDuration: 1.0, maxDuration: 2.99 }
+    options: SceneDetectionOptions = {}
 ) {
     console.log('Iniciando procesamiento de videos al estilo Python...');
 
     try {
-        // Usar la implementación que replica el comportamiento del script Python
-        const generatedClips = await clipGenerator.processVideosLikePython(inputDir, options);
-        console.log(`Procesamiento completado. Se generaron ${generatedClips.length} clips.`);
-        return generatedClips;
+        const files = fs.readdirSync(inputDir)
+            .filter(f => /\.(mp4|mkv|webm)$/i.test(f));
+        const results: string[] = [];
+        for (const file of files) {
+            const clips = await clipGenerator.detectScenesAndGenerateClips(path.join(inputDir, file), options);
+            results.push(...clips);
+        }
+        console.log(`Procesamiento completado. Se generaron ${results.length} clips.`);
+        return results;
     } catch (error) {
         console.error('Error durante el procesamiento:', error);
         throw error;
@@ -53,7 +58,7 @@ export async function processVideosToPythonClips(
 // Función para ayudar al usuario a procesar videos descargados previamente
 export async function processDownloadedVideos(
     category: string,
-    options = { minDuration: 1.0, maxDuration: 2.99 }
+    options: SceneDetectionOptions = {}
 ) {
     const categoryPath = path.join(DOWNLOADS_DIR, category);
 
@@ -175,12 +180,8 @@ yargs(hideBin(process.argv))
                 describe: 'Umbral para la detección de escenas',
                 type: 'number',
                 default: 30
-            })
-            .option('ffmpeg', {
-                describe: 'Usar FFmpeg para detección de escenas en lugar de PySceneDetect',
-                type: 'boolean',
-                default: false
             });
+            // Detección siempre se realiza con PySceneDetect
     }, async (argv) => {
         try {
             const app = new SakugaDownAndClipGen(
@@ -190,11 +191,8 @@ yargs(hideBin(process.argv))
 
             const inputPath = argv.input as string;
             const sceneOptions = {
-                minDuration: argv['min-duration'] as number,
-                maxDuration: argv['max-duration'] as number,
-                threshold: argv.threshold as number,
-                useFFmpegDetection: argv.ffmpeg as boolean
-            };
+                threshold: argv.threshold as number
+            } as SceneDetectionOptions;
 
             if (fs.existsSync(inputPath)) {
                 const stats = fs.statSync(inputPath);
@@ -202,19 +200,10 @@ yargs(hideBin(process.argv))
                 if (stats.isFile()) {
                     // Procesar un solo archivo
                     console.log(`Procesando video: ${inputPath}`);
-                    let clipPaths: string[];
-
-                    if (sceneOptions.useFFmpegDetection) {
-                        clipPaths = await app['clipGenerator'].detectScenesWithFFmpegAndGenerateClips(
-                            inputPath,
-                            sceneOptions
-                        );
-                    } else {
-                        clipPaths = await app['clipGenerator'].detectScenesAndGenerateClips(
-                            inputPath,
-                            sceneOptions
-                        );
-                    }
+                    const clipPaths = await app['clipGenerator'].detectScenesAndGenerateClips(
+                        inputPath,
+                        sceneOptions
+                    );
 
                     console.log(`Se generaron ${clipPaths.length} clips del video.`);
                 } else if (stats.isDirectory()) {
@@ -279,11 +268,6 @@ yargs(hideBin(process.argv))
                 type: 'number',
                 default: 30
             })
-            .option('ffmpeg', {
-                describe: 'Usar FFmpeg para detección de escenas en lugar de PySceneDetect',
-                type: 'boolean',
-                default: false
-            })
             .check((argv) => {
                 if (!argv.url && !argv['tags-file']) {
                     throw new Error('Debe proporcionar una URL o un archivo de etiquetas');
@@ -298,11 +282,8 @@ yargs(hideBin(process.argv))
             );
 
             const sceneOptions = {
-                minDuration: argv['min-duration'] as number,
-                maxDuration: argv['max-duration'] as number,
-                threshold: argv.threshold as number,
-                useFFmpegDetection: argv.ffmpeg as boolean
-            };
+                threshold: argv.threshold as number
+            } as SceneDetectionOptions;
 
             let results: Map<string, string[]> = new Map();
 
