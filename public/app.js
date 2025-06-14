@@ -90,6 +90,77 @@ document.addEventListener('DOMContentLoaded', () => {
         await startDownload({ tags });
     });
 
+    // Download images form submission
+    const downloadImagesForm = document.getElementById('downloadImagesForm');
+    let imagesPage = 0;
+    let imageLimit = 50;
+    const imageLimitSelect = document.getElementById('imageLimit');
+    const nextImagesBtn = document.getElementById('nextImagesBtn');
+
+    const fetchImages = async () => {
+        const query = document.getElementById('imageQuery').value.trim();
+        const fileInput = document.getElementById('queriesFile');
+        const formData = new FormData();
+        if (query) formData.append('query', query);
+        if (fileInput && fileInput.files.length > 0) {
+            formData.append('queriesFile', fileInput.files[0]);
+        }
+        formData.append('limit', imageLimit.toString());
+        formData.append('start', (imagesPage * imageLimit).toString());
+
+        const response = await fetch('/api/download-images', {
+            method: 'POST',
+            body: formData
+        });
+        const result = await response.json();
+        if (result && result.message) {
+            document.getElementById('imageDownloadStatus').textContent = result.message;
+        }
+    };
+
+    if (imageLimitSelect) {
+        imageLimitSelect.addEventListener('change', () => {
+            imageLimit = parseInt(imageLimitSelect.value);
+            imagesPage = 0;
+        });
+    }
+
+    if (downloadImagesForm) {
+        downloadImagesForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            imagesPage = 0;
+            await fetchImages();
+        });
+    }
+
+    if (nextImagesBtn) {
+        nextImagesBtn.addEventListener('click', async () => {
+            imagesPage++;
+            await fetchImages();
+        });
+    }
+
+    socket.on('imageDownloaded', (data) => {
+        const listEl = document.getElementById('imageDownloadList');
+        if (!listEl) return;
+        const ext = data.path.split('.').pop().toLowerCase();
+        const src = `/${data.path}`;
+        let element;
+        if (ext === 'webm' || ext === 'mp4') {
+            element = document.createElement('video');
+            element.src = src;
+            element.controls = true;
+            element.width = 160;
+        } else {
+            element = document.createElement('img');
+            element.src = src;
+            element.width = 160;
+        }
+        element.classList.add('border');
+        listEl.appendChild(element);
+        document.getElementById('imageDownloadStatus').textContent = `Descargada: ${src}`;
+    });
+
     // Generate clips form submission
     document.getElementById('generateClipsForm').addEventListener('submit', async (e) => {
         e.preventDefault();
