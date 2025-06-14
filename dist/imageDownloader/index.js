@@ -49,27 +49,38 @@ exports.ImageDownloader = void 0;
 const axios_1 = __importDefault(require("axios"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const cheerio_1 = __importDefault(require("cheerio"));
 class ImageDownloader {
-    constructor(outputDirectory = 'output/images', baseUrl = 'https://www.sakugabooru.com') {
-        this.baseUrl = baseUrl;
+    constructor(outputDirectory = 'output/images') {
         this.outputDirectory = outputDirectory;
         if (!fs.existsSync(this.outputDirectory)) {
             fs.mkdirSync(this.outputDirectory, { recursive: true });
         }
     }
-    downloadImages(query) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const apiUrl = `${this.baseUrl}/post.json?tags=${encodeURIComponent(query)}`;
-            const response = yield axios_1.default.get(apiUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-            const posts = Array.isArray(response.data) ? response.data : [];
+    searchGoogleImages(query_1) {
+        return __awaiter(this, arguments, void 0, function* (query, limit = 10, start = 0) {
+            const url = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}&start=${start}&num=${limit}`;
+            const response = yield axios_1.default.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+            const $ = cheerio_1.default.load(response.data);
+            const urls = [];
+            $('img').each((_, img) => {
+                const src = $(img).attr('data-src') || $(img).attr('src');
+                if (src && src.startsWith('http') && !src.includes('googlelogo')) {
+                    urls.push(src);
+                }
+            });
+            return urls.slice(0, limit);
+        });
+    }
+    downloadImages(query_1) {
+        return __awaiter(this, arguments, void 0, function* (query, limit = 10, start = 0) {
+            const imageUrls = yield this.searchGoogleImages(query, limit, start);
             const paths = [];
-            for (const post of posts) {
-                const imageUrl = post.file_url || post.sample_url;
-                if (!imageUrl)
-                    continue;
-                const fileName = path.basename(new URL(imageUrl).pathname);
+            for (const imageUrl of imageUrls) {
+                const urlObj = new URL(imageUrl);
+                const fileName = path.basename(urlObj.pathname.split('?')[0]);
                 const finalPath = path.join(this.outputDirectory, fileName);
-                const res = yield axios_1.default.get(imageUrl, { responseType: 'stream' });
+                const res = yield axios_1.default.get(imageUrl, { responseType: 'stream', headers: { 'User-Agent': 'Mozilla/5.0' } });
                 const writer = fs.createWriteStream(finalPath);
                 res.data.pipe(writer);
                 yield new Promise((resolve, reject) => {
@@ -81,11 +92,11 @@ class ImageDownloader {
             return paths;
         });
     }
-    processQueries(queries) {
-        return __awaiter(this, void 0, void 0, function* () {
+    processQueries(queries_1) {
+        return __awaiter(this, arguments, void 0, function* (queries, limit = 10, start = 0) {
             const all = [];
             for (const q of queries) {
-                const p = yield this.downloadImages(q);
+                const p = yield this.downloadImages(q, limit, start);
                 all.push(...p);
             }
             return all;

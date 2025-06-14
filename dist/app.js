@@ -264,6 +264,8 @@ class SakugaDownAndClipGen {
     handlePostDownloadImages(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
+                const limit = parseInt(req.body.limit) || 10;
+                const start = parseInt(req.body.start) || 0;
                 const queries = [];
                 if (req.body.query) {
                     queries.push(String(req.body.query).trim());
@@ -281,7 +283,7 @@ class SakugaDownAndClipGen {
                     return;
                 }
                 res.json({ success: true, message: 'Descarga de imágenes iniciada' });
-                yield this.imageDownloader.processQueries(queries);
+                yield this.imageDownloader.processQueries(queries, limit, start);
             }
             catch (error) {
                 if (res.headersSent) {

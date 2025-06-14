@@ -352,9 +352,18 @@
                             <label for="queriesFile" class="form-label">Archivo de consultas (opcional):</label>
                             <input type="file" class="form-control" id="queriesFile" accept=".txt" />
                         </div>
-                        <button type="submit" class="btn btn-primary">
+                        <div class="mb-3">
+                            <label for="imageLimit" class="form-label">Número de imágenes:</label>
+                            <select class="form-select" id="imageLimit">
+                                <option value="10">10</option>
+                                <option value="25">25</option>
+                                <option value="50" selected>50</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary me-2">
                             <i class="bi bi-cloud-download"></i> Descargar Imágenes
                         </button>
+                        <button type="button" id="nextImagesBtn" class="btn btn-secondary">Buscar siguientes</button>
                     </form>
                 </div>
             </div>

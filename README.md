@@ -105,7 +105,10 @@ Una aplicación para descargar videos de Sakugabooru y generar clips automática
 2. Usar la sección 'Descargar' para obtener videos de Sakugabooru:
     - Por URL directa.
     - Por etiquetas (separadas por punto y coma).
-3. Usar la sección 'Descargar Imágenes' para obtener imágenes según una consulta o un archivo de consultas.
+3. Usar la sección 'Descargar Imágenes' para buscar en Google y descargar imágenes.
+   - Introduce la consulta manualmente o sube un archivo de consultas.
+   - Selecciona cuántas imágenes descargar (10, 25 o 50).
+   - Usa el botón "Buscar siguientes" para descargar el siguiente bloque de resultados.
 4. Utilizar la sección 'Generar clips' para procesar los videos descargados:
     - Configurar duración mínima y máxima de los clips.
     - Ajustar el umbral de detección de cambios de escena.

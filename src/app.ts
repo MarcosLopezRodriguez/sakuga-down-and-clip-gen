@@ -285,6 +285,8 @@ export class SakugaDownAndClipGen {
 
     private async handlePostDownloadImages(req: RequestWithFile, res: express.Response): Promise<void> {
         try {
+            const limit = parseInt(req.body.limit) || 10;
+            const start = parseInt(req.body.start) || 0;
             const queries: string[] = [];
             if (req.body.query) {
                 queries.push(String(req.body.query).trim());
@@ -301,7 +303,7 @@ export class SakugaDownAndClipGen {
                 return;
             }
             res.json({ success: true, message: 'Descarga de imágenes iniciada' });
-            await this.imageDownloader.processQueries(queries);
+            await this.imageDownloader.processQueries(queries, limit, start);
         } catch (error: any) {
             if (res.headersSent) {
                 this.io.emit('downloadError', { error: error.message });
