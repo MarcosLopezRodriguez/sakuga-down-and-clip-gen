@@ -108,7 +108,7 @@ export class SakugaDownAndClipGen {
         });
 
         this.queryUpload = multer({ storage: multer.memoryStorage() });
-        this.imageDownloader = new ImageDownloader(path.join(this.downloadDirectory, 'images'));
+        this.imageDownloader = new ImageDownloader('images');
 
         // Configurar WebSockets para actualizaciones en tiempo real
         this.setupWebSockets();

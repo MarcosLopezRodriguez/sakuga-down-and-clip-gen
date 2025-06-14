@@ -178,6 +178,7 @@ Para obtener ayuda sobre cualquier comando y ver todas las opciones disponibles,
 │   ├── beat_synced_videos/ # Videos generados con la función Beat Sync
 │   ├── temp_audio/       # Archivos de audio temporales subidos para análisis
 │   └── temp/             # Archivos temporales de procesamiento (ej: segmentos de video)
+├── images/             # Imágenes descargadas desde Google
 └── assets/             # Recursos adicionales (si los hubiera)
 ```
 

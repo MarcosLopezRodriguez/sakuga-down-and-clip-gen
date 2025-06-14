@@ -52,7 +52,7 @@ const path = __importStar(require("path"));
 const cheerio = __importStar(require("cheerio"));
 const events_1 = require("events");
 class ImageDownloader extends events_1.EventEmitter {
-    constructor(outputDirectory = 'output/images') {
+    constructor(outputDirectory = 'images') {
         super();
         this.outputDirectory = outputDirectory;
         if (!fs.existsSync(this.outputDirectory)) {

@@ -11,7 +11,7 @@ export interface ImageDownloadedEvent {
 export class ImageDownloader extends EventEmitter {
     private outputDirectory: string;
 
-    constructor(outputDirectory: string = 'output/images') {
+    constructor(outputDirectory: string = 'images') {
         super();
         this.outputDirectory = outputDirectory;
         if (!fs.existsSync(this.outputDirectory)) {
