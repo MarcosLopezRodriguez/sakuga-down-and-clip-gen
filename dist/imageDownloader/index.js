@@ -49,7 +49,7 @@ exports.ImageDownloader = void 0;
 const axios_1 = __importDefault(require("axios"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
-const cheerio_1 = __importDefault(require("cheerio"));
+const cheerio = __importStar(require("cheerio"));
 const events_1 = require("events");
 class ImageDownloader extends events_1.EventEmitter {
     constructor(outputDirectory = 'output/images') {
@@ -63,7 +63,7 @@ class ImageDownloader extends events_1.EventEmitter {
         return __awaiter(this, arguments, void 0, function* (query, limit = 10, start = 0) {
             const url = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}&start=${start}&num=${limit}`;
             const response = yield axios_1.default.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-            const $ = cheerio_1.default.load(response.data);
+            const $ = cheerio.load(response.data);
             const urls = [];
             $('img').each((_, img) => {
                 const src = $(img).attr('data-src') || $(img).attr('src');
