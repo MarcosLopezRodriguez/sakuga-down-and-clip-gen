@@ -105,14 +105,19 @@ Una aplicación para descargar videos de Sakugabooru y generar clips automática
 2. Usar la sección 'Descargar' para obtener videos de Sakugabooru:
     - Por URL directa.
     - Por etiquetas (separadas por punto y coma).
-3. Utilizar la sección 'Generar clips' para procesar los videos descargados:
+3. Usar la sección 'Descargar Imágenes' para buscar en Google y descargar imágenes.
+   - Introduce la consulta manualmente o sube un archivo de consultas.
+   - Selecciona cuántas imágenes descargar (10, 25 o 50).
+   - Las imágenes se guardarán en la carpeta `output/images/` con nombres únicos.
+   - Usa el botón "Buscar siguientes" para descargar el siguiente bloque de resultados.
+4. Utilizar la sección 'Generar clips' para procesar los videos descargados:
     - Configurar duración mínima y máxima de los clips.
     - Ajustar el umbral de detección de cambios de escena.
-4. Ver y gestionar los clips generados en la sección 'Explorador':
+5. Ver y gestionar los clips generados en la sección 'Explorador':
     - Los clips se reproducen automáticamente al pasar el cursor (en algunos navegadores).
     - Eliminar clips no deseados con el botón de borrado.
-5. Utilizar la sección 'Renombrar Clips' para procesar y renombrar clips existentes en nuevas carpetas.
-6. Experimenta con la función 'Beat Sync':
+6. Utilizar la sección 'Renombrar Clips' para procesar y renombrar clips existentes en nuevas carpetas.
+7. Experimenta con la función 'Beat Sync':
     - Navega a la pestaña "Beat Sync".
     - Sube un archivo de audio (MP3, WAV). La duración se detectará y mostrará.
     - Define los tiempos de inicio y fin del segmento de audio que deseas utilizar para la sincronización.
@@ -174,6 +179,7 @@ Para obtener ayuda sobre cualquier comando y ver todas las opciones disponibles,
 │   ├── beat_synced_videos/ # Videos generados con la función Beat Sync
 │   ├── temp_audio/       # Archivos de audio temporales subidos para análisis
 │   └── temp/             # Archivos temporales de procesamiento (ej: segmentos de video)
+├── output/images/      # Imágenes descargadas desde Google
 └── assets/             # Recursos adicionales (si los hubiera)
 ```
 

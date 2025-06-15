@@ -90,6 +90,153 @@ document.addEventListener('DOMContentLoaded', () => {
         await startDownload({ tags });
     });
 
+    // Download images form submission
+    const downloadImagesForm = document.getElementById('downloadImagesForm');
+    let imagesPage = 0;
+    let imageLimit = 50;
+    const imageLimitSelect = document.getElementById('imageLimit');
+    const nextImagesBtn = document.getElementById('nextImagesBtn');
+
+    const fetchImages = async () => {
+        const query = document.getElementById('imageQuery').value.trim();
+        const fileInput = document.getElementById('queriesFile');
+        const formData = new FormData();
+        if (query) formData.append('query', query);
+        if (fileInput && fileInput.files.length > 0) {
+            formData.append('queriesFile', fileInput.files[0]);
+        }
+        formData.append('limit', imageLimit.toString());
+        formData.append('start', (imagesPage * imageLimit).toString());
+
+        const response = await fetch('/api/download-images', {
+            method: 'POST',
+            body: formData
+        });
+        const result = await response.json();
+        if (result && result.message) {
+            document.getElementById('imageDownloadStatus').textContent = result.message;
+        }
+    };
+
+    if (imageLimitSelect) {
+        imageLimitSelect.addEventListener('change', () => {
+            imageLimit = parseInt(imageLimitSelect.value);
+            imagesPage = 0;
+        });
+    }
+
+    if (downloadImagesForm) {
+        downloadImagesForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            imagesPage = 0;
+            await fetchImages();
+        });
+    }
+
+    if (nextImagesBtn) {
+        nextImagesBtn.addEventListener('click', async () => {
+            imagesPage++;
+            await fetchImages();
+        });
+    }
+
+    socket.on('imageDownloaded', (data) => {
+        const listEl = document.getElementById('imageDownloadList');
+        if (!listEl) return;
+        
+        // Clean up the path and create a proper URL
+        const cleanPath = data.path.replace(/\\/g, '/');
+        const src = `/${cleanPath}`;
+        const ext = cleanPath.split('.').pop().toLowerCase();
+        const isVideo = ['webm', 'mp4', 'mov'].includes(ext);
+
+        // Create card container
+        const card = document.createElement('div');
+        card.className = 'image-card position-relative m-2';
+        card.style.width = '200px';
+        card.style.height = '200px';
+        card.style.overflow = 'hidden';
+        card.style.border = '1px solid #dee2e6';
+        card.style.borderRadius = '0.25rem';
+        
+        const elementId = `img-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        card.id = elementId;
+
+        // Create media element
+        let media;
+        if (isVideo) {
+            media = document.createElement('video');
+            media.src = src;
+            media.controls = true;
+            media.style.width = '100%';
+            media.style.height = '100%';
+            media.style.objectFit = 'cover';
+        } else {
+            media = document.createElement('img');
+            media.src = src;
+            media.style.width = '100%';
+            media.style.height = '100%';
+            media.style.objectFit = 'cover';
+            media.onerror = function() {
+                // If image fails to load, show a placeholder
+                this.onerror = null; // Prevent infinite loop
+                this.src = 'data:image/svg+xml;charset=UTF-8,%3Csvg width="200" height="200" xmlns="http://www.w3.org/2000/svg"%3E%3Crect width="100%25" height="100%25" fill="%23f8f9fa"/%3E%3Ctext x="50%25" y="50%25" font-family="sans-serif" font-size="14" text-anchor="middle" dominant-baseline="middle" fill="%236c757d"%3EImagen no disponible%3C/text%3E%3C/svg%3E';
+            };
+        }
+
+        // Create delete button
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-danger btn-sm position-absolute top-0 end-0 m-1';
+        deleteBtn.style.zIndex = '10';
+        deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+        deleteBtn.title = 'Eliminar imagen';
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteImage(data.path, elementId);
+        });
+
+        // Create overlay for hover effect
+        const overlay = document.createElement('div');
+        overlay.className = 'position-absolute w-100 h-100 d-flex justify-content-center align-items-center';
+        overlay.style.background = 'rgba(0,0,0,0.5)';
+        overlay.style.opacity = '0';
+        overlay.style.transition = 'opacity 0.2s';
+        overlay.style.cursor = 'pointer';
+        
+        // Add hover effect
+        card.addEventListener('mouseenter', () => {
+            overlay.style.opacity = '1';
+        });
+        
+        card.addEventListener('mouseleave', () => {
+            overlay.style.opacity = '0';
+        });
+
+        // Add click to view in full size
+        overlay.addEventListener('click', () => {
+            if (isVideo) {
+                openVideoPlayer(src, 'Vista previa');
+            } else {
+                window.open(src, '_blank');
+            }
+        });
+
+        // Assemble the card
+        card.appendChild(media);
+        card.appendChild(overlay);
+        card.appendChild(deleteBtn);
+        
+        // Add to the list
+        listEl.prepend(card);
+        
+        // Update status
+        const statusEl = document.getElementById('imageDownloadStatus');
+        if (statusEl) {
+            statusEl.textContent = `Descargada: ${cleanPath}`;
+            statusEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    });
+
     // Generate clips form submission
     document.getElementById('generateClipsForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -836,6 +983,65 @@ function showDownloadError(message) {
     setTimeout(() => errorDiv.remove(), 10000);
 }
 
+// Mostrar notificación toast
+function showToast(message, type = 'info') {
+    // Crear el contenedor del toast si no existe
+    let toastContainer = document.getElementById('toast-container');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'toast-container';
+        toastContainer.style.position = 'fixed';
+        toastContainer.style.top = '20px';
+        toastContainer.style.right = '20px';
+        toastContainer.style.zIndex = '9999';
+        document.body.appendChild(toastContainer);
+    }
+
+    // Crear el elemento toast
+    const toast = document.createElement('div');
+    const toastId = 'toast-' + Date.now();
+    toast.id = toastId;
+    
+    // Establecer clases según el tipo de mensaje
+    const typeClasses = {
+        'success': 'bg-success text-white',
+        'error': 'bg-danger text-white',
+        'warning': 'bg-warning text-dark',
+        'info': 'bg-info text-white'
+    };
+    
+    toast.className = `toast show align-items-center ${typeClasses[type] || typeClasses['info']} border-0 mb-2`;
+    toast.role = 'alert';
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+    
+    // Contenido del toast
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">
+                ${message}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    `;
+    
+    // Agregar el toast al contenedor
+    toastContainer.appendChild(toast);
+    
+    // Eliminar el toast después de 5 segundos
+    setTimeout(() => {
+        const toastElement = document.getElementById(toastId);
+        if (toastElement) {
+            toastElement.classList.remove('show');
+            setTimeout(() => {
+                if (toastElement.parentNode) {
+                    toastElement.parentNode.removeChild(toastElement);
+                }
+            }, 300);
+        }
+    }, 5000);
+}
+
 // Actualizar la barra de progreso
 function updateDownloadProgress(percent) {
     const progressBar = document.getElementById('downloadProgress');
@@ -1460,6 +1666,68 @@ async function deleteVideo(videoPath) {
 
     } catch (error) {
         console.error('Error al eliminar video:', error);
+        alert(`Error: ${error.message}`);
+    }
+}
+
+// Function to delete a downloaded image
+async function deleteImage(imagePath, elementId) {
+    try {
+        // Clean up the path to ensure it's relative to the images directory
+        const cleanPath = imagePath.replace(/^.*[\\/]images[\\/]/, '');
+        
+        const response = await fetch('/api/delete-image', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ imagePath: cleanPath })
+        });
+
+        // First check if the response is JSON
+        const contentType = response.headers.get('content-type');
+        let data;
+        
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            // If not JSON, get the text and try to parse it as JSON, otherwise use it as an error message
+            const text = await response.text();
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                throw new Error(text || 'Error al procesar la respuesta del servidor');
+            }
+        }
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Error al eliminar la imagen');
+        }
+
+        // Remove the element from the UI
+        if (elementId) {
+            const el = document.getElementById(elementId);
+            if (el) {
+                el.style.opacity = '0';
+                setTimeout(() => el.remove(), 200); // Smooth removal
+            }
+        }
+        
+        // Show success message
+        showToast('Imagen eliminada correctamente', 'success');
+
+        const statusEl = document.getElementById('imageDownloadStatus');
+        if (statusEl) {
+            const originalText = statusEl.textContent;
+            statusEl.textContent = 'Imagen eliminada exitosamente';
+            statusEl.style.color = '#28a745';
+            setTimeout(() => {
+                statusEl.textContent = originalText;
+                statusEl.style.color = '';
+            }, 2000);
+        }
+    } catch (error) {
+        console.error('Error al eliminar imagen:', error);
         alert(`Error: ${error.message}`);
     }
 }
