@@ -144,8 +144,8 @@ class ImageDownloader extends events_1.EventEmitter {
                     writer.on('finish', resolve);
                     writer.on('error', reject);
                 });
-                downloaded.push({ path: finalPath, url: imageUrl });
-                this.emit('imageDownloaded', { path: finalPath, url: imageUrl });
+                downloaded.push({ path: finalPath, url: imageUrl, page: result.page });
+                this.emit('imageDownloaded', { path: finalPath, url: imageUrl, page: result.page });
             }
             return downloaded;
         });

@@ -7,6 +7,7 @@ import { EventEmitter } from 'events';
 export interface ImageDownloadedEvent {
     path: string;
     url: string;
+    page?: string;
 }
 
 export interface ImageSearchResult {
@@ -17,6 +18,7 @@ export interface ImageSearchResult {
 export interface ImageDownloadResult {
     path: string;
     url: string;
+    page?: string;
 }
 
 export class ImageDownloader extends EventEmitter {
@@ -115,8 +117,8 @@ export class ImageDownloader extends EventEmitter {
                 writer.on('finish', resolve);
                 writer.on('error', reject);
             });
-            downloaded.push({ path: finalPath, url: imageUrl });
-            this.emit('imageDownloaded', { path: finalPath, url: imageUrl } as ImageDownloadedEvent);
+            downloaded.push({ path: finalPath, url: imageUrl, page: result.page });
+            this.emit('imageDownloaded', { path: finalPath, url: imageUrl, page: result.page } as ImageDownloadedEvent);
         }
         return downloaded;
     }

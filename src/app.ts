@@ -157,7 +157,8 @@ export class SakugaDownAndClipGen {
             const rel = path.relative(this.imagesDirectory, info.path).replace(/\\/g, '/');
             this.io.emit('imageDownloaded', {
                 path: path.join('images', rel).replace(/\\/g, '/'),
-                url: info.url
+                url: info.url,
+                page: info.page
             });
         });
     }

@@ -148,6 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const cleanPath = data.path.replace(/\\/g, '/');
         const src = `/${cleanPath}`;
         const originalUrl = data.url || src;
+        const pageUrl = data.page || originalUrl;
         const ext = cleanPath.split('.').pop().toLowerCase();
         const isVideo = ['webm', 'mp4', 'mov'].includes(ext);
 
@@ -201,10 +202,10 @@ document.addEventListener('DOMContentLoaded', () => {
         openBtn.className = 'btn btn-primary btn-sm position-absolute top-0 start-0 m-1';
         openBtn.style.zIndex = '10';
         openBtn.innerHTML = '<i class="bi bi-box-arrow-up-right"></i>';
-        openBtn.title = 'Abrir original';
+        openBtn.title = 'Abrir fuente';
         openBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            window.open(originalUrl, '_blank');
+            window.open(pageUrl, '_blank');
         });
 
         // Create overlay for hover effect
