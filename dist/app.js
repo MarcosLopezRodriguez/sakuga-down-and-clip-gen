@@ -154,7 +154,10 @@ class SakugaDownAndClipGen {
         // Conectar eventos del ImageDownloader
         this.imageDownloader.on('imageDownloaded', (info) => {
             const rel = path.relative(this.imagesDirectory, info.path).replace(/\\/g, '/');
-            this.io.emit('imageDownloaded', { path: path.join('images', rel).replace(/\\/g, '/') });
+            this.io.emit('imageDownloaded', {
+                path: path.join('images', rel).replace(/\\/g, '/'),
+                url: info.url
+            });
         });
     }
     /**

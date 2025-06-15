@@ -6,11 +6,17 @@ import { EventEmitter } from 'events';
 
 export interface ImageDownloadedEvent {
     path: string;
+    url: string;
 }
 
 export interface ImageSearchResult {
     image: string;
     page?: string;
+}
+
+export interface ImageDownloadResult {
+    path: string;
+    url: string;
 }
 
 export class ImageDownloader extends EventEmitter {
@@ -85,9 +91,9 @@ export class ImageDownloader extends EventEmitter {
         return result.image;
     }
 
-    async downloadImages(query: string, limit: number = 10, start: number = 0): Promise<string[]> {
+    async downloadImages(query: string, limit: number = 10, start: number = 0): Promise<ImageDownloadResult[]> {
         const results = await this.searchGoogleImages(query, limit, start);
-        const paths: string[] = [];
+        const downloaded: ImageDownloadResult[] = [];
         for (const result of results) {
             const imageUrl = await this.resolveOriginalUrl(result);
             const urlObj = new URL(imageUrl);
@@ -109,14 +115,14 @@ export class ImageDownloader extends EventEmitter {
                 writer.on('finish', resolve);
                 writer.on('error', reject);
             });
-            paths.push(finalPath);
-            this.emit('imageDownloaded', { path: finalPath } as ImageDownloadedEvent);
+            downloaded.push({ path: finalPath, url: imageUrl });
+            this.emit('imageDownloaded', { path: finalPath, url: imageUrl } as ImageDownloadedEvent);
         }
-        return paths;
+        return downloaded;
     }
 
-    async processQueries(queries: string[], limit: number = 10, start: number = 0): Promise<string[]> {
-        const all: string[] = [];
+    async processQueries(queries: string[], limit: number = 10, start: number = 0): Promise<ImageDownloadResult[]> {
+        const all: ImageDownloadResult[] = [];
         for (const q of queries) {
             const p = await this.downloadImages(q, limit, start);
             all.push(...p);

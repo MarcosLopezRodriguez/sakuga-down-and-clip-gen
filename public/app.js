@@ -147,6 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Clean up the path and create a proper URL
         const cleanPath = data.path.replace(/\\/g, '/');
         const src = `/${cleanPath}`;
+        const originalUrl = data.url || src;
         const ext = cleanPath.split('.').pop().toLowerCase();
         const isVideo = ['webm', 'mp4', 'mov'].includes(ext);
 
@@ -217,7 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isVideo) {
                 openVideoPlayer(src, 'Vista previa');
             } else {
-                window.open(src, '_blank');
+                window.open(originalUrl, '_blank');
             }
         });
 

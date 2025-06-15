@@ -122,7 +122,7 @@ class ImageDownloader extends events_1.EventEmitter {
     downloadImages(query_1) {
         return __awaiter(this, arguments, void 0, function* (query, limit = 10, start = 0) {
             const results = yield this.searchGoogleImages(query, limit, start);
-            const paths = [];
+            const downloaded = [];
             for (const result of results) {
                 const imageUrl = yield this.resolveOriginalUrl(result);
                 const urlObj = new URL(imageUrl);
@@ -144,10 +144,10 @@ class ImageDownloader extends events_1.EventEmitter {
                     writer.on('finish', resolve);
                     writer.on('error', reject);
                 });
-                paths.push(finalPath);
-                this.emit('imageDownloaded', { path: finalPath });
+                downloaded.push({ path: finalPath, url: imageUrl });
+                this.emit('imageDownloaded', { path: finalPath, url: imageUrl });
             }
-            return paths;
+            return downloaded;
         });
     }
     processQueries(queries_1) {
