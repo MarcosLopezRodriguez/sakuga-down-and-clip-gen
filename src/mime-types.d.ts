@@ -1,1 +1,4 @@
-declare module 'mime-types';
+declare module 'mime-types' {
+  const mime: any;
+  export default mime;
+}
