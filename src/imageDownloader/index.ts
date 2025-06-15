@@ -25,9 +25,13 @@ export class ImageDownloader extends EventEmitter {
         const $ = cheerio.load(response.data);
         const urls: string[] = [];
         $('img').each((_, img) => {
-            const src = $(img).attr('data-src') || $(img).attr('src');
-            if (src && src.startsWith('http') && !src.includes('googlelogo')) {
-                urls.push(src);
+            const original =
+                $(img).attr('data-iurl') ||
+                $(img).attr('data-src') ||
+                $(img).attr('src');
+
+            if (original && original.startsWith('http') && !original.includes('googlelogo')) {
+                urls.push(original);
             }
         });
         return urls.slice(0, limit);

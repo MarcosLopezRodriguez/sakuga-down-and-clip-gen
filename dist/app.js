@@ -688,10 +688,14 @@ class SakugaDownAndClipGen {
     handlePostDeleteImage(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const { imagePath } = req.body;
+                let { imagePath } = req.body;
                 if (!imagePath) {
                     res.status(400).json({ error: 'Se requiere la ruta de la imagen a eliminar' });
                     return;
+                }
+                // Si la ruta ya comienza con 'images/', la quitamos para evitar duplicación
+                if (imagePath.startsWith('images/') || imagePath.startsWith('images\\')) {
+                    imagePath = imagePath.replace(/^images[\\/]/, '');
                 }
                 const fullPath = path.join(this.imagesDirectory, imagePath);
                 console.log(`Intentando eliminar imagen: ${fullPath}`);
@@ -707,6 +711,8 @@ class SakugaDownAndClipGen {
                 }
                 fs.unlinkSync(fullPath);
                 console.log(`Imagen eliminada: ${imagePath}`);
+                // Notificar a los clientes que se eliminó una imagen
+                this.io.emit('imageDeleted', { path: imagePath });
                 res.json({ success: true, message: 'Imagen eliminada correctamente' });
             }
             catch (error) {
