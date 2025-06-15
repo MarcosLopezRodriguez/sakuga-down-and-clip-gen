@@ -196,6 +196,17 @@ document.addEventListener('DOMContentLoaded', () => {
             deleteImage(data.path, elementId);
         });
 
+        // Button to open the original URL
+        const openBtn = document.createElement('button');
+        openBtn.className = 'btn btn-primary btn-sm position-absolute top-0 start-0 m-1';
+        openBtn.style.zIndex = '10';
+        openBtn.innerHTML = '<i class="bi bi-box-arrow-up-right"></i>';
+        openBtn.title = 'Abrir original';
+        openBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.open(originalUrl, '_blank');
+        });
+
         // Create overlay for hover effect
         const overlay = document.createElement('div');
         overlay.className = 'position-absolute w-100 h-100 d-flex justify-content-center align-items-center';
@@ -225,6 +236,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Assemble the card
         card.appendChild(media);
         card.appendChild(overlay);
+        card.appendChild(openBtn);
         card.appendChild(deleteBtn);
         
         // Add to the list
