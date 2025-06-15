@@ -64,16 +64,30 @@ class ImageDownloader extends events_1.EventEmitter {
             const url = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}&start=${start}&num=${limit}`;
             const response = yield axios_1.default.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
             const $ = cheerio.load(response.data);
-            const urls = [];
+            const urls = new Set();
+            // Intenta obtener el enlace directo desde los anchors con /imgres?imgurl=
+            $('a[href^="/imgres"]').each((_, link) => {
+                const href = $(link).attr('href');
+                if (!href)
+                    return;
+                const match = href.match(/imgurl=([^&]+)/);
+                if (match) {
+                    const decoded = decodeURIComponent(match[1]);
+                    if (decoded.startsWith('http')) {
+                        urls.add(decoded);
+                    }
+                }
+            });
+            // Como respaldo, revisa las etiquetas <img>
             $('img').each((_, img) => {
                 const original = $(img).attr('data-iurl') ||
                     $(img).attr('data-src') ||
                     $(img).attr('src');
                 if (original && original.startsWith('http') && !original.includes('googlelogo')) {
-                    urls.push(original);
+                    urls.add(original);
                 }
             });
-            return urls.slice(0, limit);
+            return Array.from(urls).slice(0, limit);
         });
     }
     downloadImages(query_1) {
