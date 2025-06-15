@@ -71,10 +71,17 @@ export class ImageDownloader extends EventEmitter {
     }
 
     private async resolveOriginalUrl(result: ImageSearchResult): Promise<string> {
+        if (result.image.startsWith('http') &&
+            !result.image.startsWith('data:') &&
+            !result.image.includes('gstatic.com')) {
+            return result.image;
+        }
+
         if (result.page) {
             try {
                 const page = await axios.get(result.page, { headers: { 'User-Agent': 'Mozilla/5.0' } });
                 const $ = cheerio.load(page.data);
+
                 const meta =
                     $('meta[property="og:image"]').attr('content') ||
                     $('meta[name="twitter:image"]').attr('content') ||
@@ -82,14 +89,36 @@ export class ImageDownloader extends EventEmitter {
                 if (meta && meta.startsWith('http')) {
                     return meta;
                 }
-                const firstImg = $('img').map((_, img) => $(img).attr('src')).get().find(src => src && src.startsWith('http'));
-                if (firstImg) {
-                    return firstImg;
+
+                const candidates: { url: string; size: number }[] = [];
+                $('img').each((_, img) => {
+                    let src = $(img).attr('src') || $(img).attr('data-src') || $(img).attr('data-original');
+                    if (src && src.startsWith('http')) {
+                        const w = parseInt($(img).attr('width') || '0', 10);
+                        const h = parseInt($(img).attr('height') || '0', 10);
+                        candidates.push({ url: src, size: w * h });
+                    }
+                    const srcset = $(img).attr('srcset');
+                    if (srcset) {
+                        srcset.split(',').forEach(part => {
+                            const [u, size] = part.trim().split(' ');
+                            if (u && u.startsWith('http')) {
+                                const parsed = parseInt(size || '0', 10);
+                                candidates.push({ url: u, size: parsed || 0 });
+                            }
+                        });
+                    }
+                });
+
+                if (candidates.length) {
+                    candidates.sort((a, b) => b.size - a.size);
+                    return candidates[0].url;
                 }
             } catch (_) {
                 // ignorar errores y usar la url proporcionada
             }
         }
+
         return result.image;
     }
 
