@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as cheerio from 'cheerio';
 import { EventEmitter } from 'events';
-import mime from 'mime-types';
 
 export interface ImageDownloadedEvent {
     path: string;
@@ -46,8 +45,7 @@ export class ImageDownloader extends EventEmitter {
             });
             let ext = path.extname(fileName);
             if (!ext) {
-                const mimeExt = mime.extension(res.headers['content-type'] || '');
-                ext = mimeExt ? `.${mimeExt}` : '.jpg';
+                ext = '.jpg';
             }
             const base = path.basename(fileName, path.extname(fileName)) || 'image';
             fileName = `${base}-${Date.now()}${ext}`;

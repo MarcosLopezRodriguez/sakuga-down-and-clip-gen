@@ -51,7 +51,6 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const cheerio = __importStar(require("cheerio"));
 const events_1 = require("events");
-const mime_types_1 = __importDefault(require("mime-types"));
 class ImageDownloader extends events_1.EventEmitter {
     constructor(outputDirectory = 'images') {
         super();
@@ -88,8 +87,7 @@ class ImageDownloader extends events_1.EventEmitter {
                 });
                 let ext = path.extname(fileName);
                 if (!ext) {
-                    const mimeExt = mime_types_1.default.extension(res.headers['content-type'] || '');
-                    ext = mimeExt ? `.${mimeExt}` : '.jpg';
+                    ext = '.jpg';
                 }
                 const base = path.basename(fileName, path.extname(fileName)) || 'image';
                 fileName = `${base}-${Date.now()}${ext}`;
