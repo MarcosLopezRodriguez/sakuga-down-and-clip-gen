@@ -145,19 +145,36 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!listEl) return;
         const ext = data.path.split('.').pop().toLowerCase();
         const src = `/${data.path}`;
-        let element;
+
+        const card = document.createElement('div');
+        card.className = 'image-card';
+        const elementId = `img-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        card.id = elementId;
+
+        let media;
         if (ext === 'webm' || ext === 'mp4') {
-            element = document.createElement('video');
-            element.src = src;
-            element.controls = true;
-            element.width = 160;
+            media = document.createElement('video');
+            media.src = src;
+            media.controls = true;
+            media.width = 160;
         } else {
-            element = document.createElement('img');
-            element.src = src;
-            element.width = 160;
+            media = document.createElement('img');
+            media.src = src;
+            media.width = 160;
         }
-        element.classList.add('border');
-        listEl.appendChild(element);
+        media.classList.add('border');
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'delete-image-btn';
+        deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+        deleteBtn.title = 'Eliminar imagen';
+        deleteBtn.addEventListener('click', () => {
+            deleteImage(data.path, elementId);
+        });
+
+        card.appendChild(media);
+        card.appendChild(deleteBtn);
+        listEl.appendChild(card);
         document.getElementById('imageDownloadStatus').textContent = `Descargada: ${src}`;
     });
 
@@ -1531,6 +1548,44 @@ async function deleteVideo(videoPath) {
 
     } catch (error) {
         console.error('Error al eliminar video:', error);
+        alert(`Error: ${error.message}`);
+    }
+}
+
+// Function to delete a downloaded image
+async function deleteImage(imagePath, elementId) {
+    try {
+        const response = await fetch('/api/delete-image', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ imagePath })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Error al eliminar la imagen');
+        }
+
+        if (elementId) {
+            const el = document.getElementById(elementId);
+            if (el) el.remove();
+        }
+
+        const statusEl = document.getElementById('imageDownloadStatus');
+        if (statusEl) {
+            const originalText = statusEl.textContent;
+            statusEl.textContent = 'Imagen eliminada exitosamente';
+            statusEl.style.color = '#28a745';
+            setTimeout(() => {
+                statusEl.textContent = originalText;
+                statusEl.style.color = '';
+            }, 2000);
+        }
+    } catch (error) {
+        console.error('Error al eliminar imagen:', error);
         alert(`Error: ${error.message}`);
     }
 }

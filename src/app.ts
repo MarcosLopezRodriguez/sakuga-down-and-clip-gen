@@ -33,6 +33,7 @@ export class SakugaDownAndClipGen {
     private upload: multer.Multer;
     private queryUpload: multer.Multer;
     private imageDownloader: ImageDownloader;
+    private imagesDirectory: string;
     constructor(
         downloadDirectory: string = 'output/downloads',
         clipDirectory: string = 'output/clips',
@@ -57,6 +58,7 @@ export class SakugaDownAndClipGen {
         this.clipDirectory = clipDirectory;
         this.randomNamesDirectory = randomNamesDirectory;
         this.tempAudioDirectory = tempAudioDirectory;
+        this.imagesDirectory = 'output/images';
         this.app = express();
         this.server = http.createServer(this.app);
         this.io = new Server(this.server);
@@ -80,7 +82,11 @@ export class SakugaDownAndClipGen {
 
         if (!fs.existsSync(this.beatSyncedVideosDirectory)) {
             fs.mkdirSync(this.beatSyncedVideosDirectory, { recursive: true });
-        }        // Configure multer
+        }
+        if (!fs.existsSync(this.imagesDirectory)) {
+            fs.mkdirSync(this.imagesDirectory, { recursive: true });
+        }
+        // Configure multer
         const storage = multer.diskStorage({
             destination: (req: Request, file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
                 cb(null, this.tempAudioDirectory);
@@ -108,7 +114,7 @@ export class SakugaDownAndClipGen {
         });
 
         this.queryUpload = multer({ storage: multer.memoryStorage() });
-        this.imageDownloader = new ImageDownloader('images');
+        this.imageDownloader = new ImageDownloader(this.imagesDirectory);
 
         // Configurar WebSockets para actualizaciones en tiempo real
         this.setupWebSockets();
@@ -148,8 +154,8 @@ export class SakugaDownAndClipGen {
 
         // Conectar eventos del ImageDownloader
         this.imageDownloader.on('imageDownloaded', (info) => {
-            const relativePath = path.join('downloads', path.relative(this.downloadDirectory, info.path)).replace(/\\/g, '/');
-            this.io.emit('imageDownloaded', { path: relativePath });
+            const rel = path.relative(this.imagesDirectory, info.path).replace(/\\/g, '/');
+            this.io.emit('imageDownloaded', { path: path.join('images', rel).replace(/\\/g, '/') });
         });
     }
 
@@ -168,6 +174,7 @@ export class SakugaDownAndClipGen {
         this.app.use('/downloads', express.static(this.downloadDirectory));
         this.app.use('/clips', express.static(this.clipDirectory));
         this.app.use('/beat_synced_videos', express.static(this.beatSyncedVideosDirectory));
+        this.app.use('/images', express.static(this.imagesDirectory));
 
         // Endpoint para la página principal
         this.app.get('/', this.handleGetHome.bind(this));
@@ -203,6 +210,9 @@ export class SakugaDownAndClipGen {
 
         // API para eliminar un video descargado
         this.app.post('/api/delete-video', this.handlePostDeleteVideo.bind(this));
+
+        // API para eliminar una imagen descargada
+        this.app.post('/api/delete-image', this.handlePostDeleteImage.bind(this));
 
         // API for listing clip folders and renaming videos
         this.app.get('/api/clips/list-folders', this.handleListClipFolders.bind(this));
@@ -736,6 +746,44 @@ export class SakugaDownAndClipGen {
             res.json({ success: true, message: 'Video eliminado correctamente' });
         } catch (error: any) {
             console.error('Error al eliminar video:', error);
+            res.status(500).json({ error: error.message });
+        }
+    }
+
+    /**
+     * Maneja la solicitud para eliminar una imagen descargada
+     */
+    private async handlePostDeleteImage(req: express.Request, res: express.Response): Promise<void> {
+        try {
+            const { imagePath } = req.body;
+
+            if (!imagePath) {
+                res.status(400).json({ error: 'Se requiere la ruta de la imagen a eliminar' });
+                return;
+            }
+
+            const fullPath = path.join(this.imagesDirectory, imagePath);
+            console.log(`Intentando eliminar imagen: ${fullPath}`);
+
+            if (!fs.existsSync(fullPath)) {
+                res.status(404).json({ error: 'Imagen no encontrada' });
+                return;
+            }
+
+            const normalizedDir = path.normalize(this.imagesDirectory);
+            const normalizedFullPath = path.normalize(fullPath);
+
+            if (!normalizedFullPath.startsWith(normalizedDir)) {
+                res.status(403).json({ error: 'Acceso denegado: ruta de archivo no permitida' });
+                return;
+            }
+
+            fs.unlinkSync(fullPath);
+            console.log(`Imagen eliminada: ${imagePath}`);
+
+            res.json({ success: true, message: 'Imagen eliminada correctamente' });
+        } catch (error: any) {
+            console.error('Error al eliminar imagen:', error);
             res.status(500).json({ error: error.message });
         }
     }

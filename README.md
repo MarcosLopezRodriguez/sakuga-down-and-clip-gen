@@ -108,7 +108,7 @@ Una aplicación para descargar videos de Sakugabooru y generar clips automática
 3. Usar la sección 'Descargar Imágenes' para buscar en Google y descargar imágenes.
    - Introduce la consulta manualmente o sube un archivo de consultas.
    - Selecciona cuántas imágenes descargar (10, 25 o 50).
-   - Las imágenes se guardarán en la carpeta `images/` con nombres únicos.
+   - Las imágenes se guardarán en la carpeta `output/images/` con nombres únicos.
    - Usa el botón "Buscar siguientes" para descargar el siguiente bloque de resultados.
 4. Utilizar la sección 'Generar clips' para procesar los videos descargados:
     - Configurar duración mínima y máxima de los clips.
@@ -179,7 +179,7 @@ Para obtener ayuda sobre cualquier comando y ver todas las opciones disponibles,
 │   ├── beat_synced_videos/ # Videos generados con la función Beat Sync
 │   ├── temp_audio/       # Archivos de audio temporales subidos para análisis
 │   └── temp/             # Archivos temporales de procesamiento (ej: segmentos de video)
-├── images/             # Imágenes descargadas desde Google
+├── output/images/      # Imágenes descargadas desde Google
 └── assets/             # Recursos adicionales (si los hubiera)
 ```
 
