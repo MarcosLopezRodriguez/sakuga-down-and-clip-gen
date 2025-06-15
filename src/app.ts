@@ -170,7 +170,7 @@ export class SakugaDownAndClipGen {
         // Servir archivos estáticos
         this.app.use(express.static(path.join(__dirname, '../public')));
 
-        // Servir los videos y clips descargados
+        // Servir los videos, clips e imágenes descargados
         this.app.use('/downloads', express.static(this.downloadDirectory));
         this.app.use('/clips', express.static(this.clipDirectory));
         this.app.use('/beat_synced_videos', express.static(this.beatSyncedVideosDirectory));
@@ -198,6 +198,9 @@ export class SakugaDownAndClipGen {
 
         // API para generar clips de un video
         this.app.post('/api/generate-clips', this.handlePostGenerateClips.bind(this));
+
+        // API para eliminar una imagen
+        this.app.post('/api/delete-image', this.handlePostDeleteImage.bind(this));
 
         // API para generar clips de todos los videos en una carpeta
         this.app.post('/api/generate-clips-from-folder', this.handlePostGenerateClipsFromFolder.bind(this));
@@ -755,11 +758,16 @@ export class SakugaDownAndClipGen {
      */
     private async handlePostDeleteImage(req: express.Request, res: express.Response): Promise<void> {
         try {
-            const { imagePath } = req.body;
+            let { imagePath } = req.body;
 
             if (!imagePath) {
                 res.status(400).json({ error: 'Se requiere la ruta de la imagen a eliminar' });
                 return;
+            }
+
+            // Si la ruta ya comienza con 'images/', la quitamos para evitar duplicación
+            if (imagePath.startsWith('images/') || imagePath.startsWith('images\\')) {
+                imagePath = imagePath.replace(/^images[\\/]/, '');
             }
 
             const fullPath = path.join(this.imagesDirectory, imagePath);
@@ -780,6 +788,9 @@ export class SakugaDownAndClipGen {
 
             fs.unlinkSync(fullPath);
             console.log(`Imagen eliminada: ${imagePath}`);
+
+            // Notificar a los clientes que se eliminó una imagen
+            this.io.emit('imageDeleted', { path: imagePath });
 
             res.json({ success: true, message: 'Imagen eliminada correctamente' });
         } catch (error: any) {

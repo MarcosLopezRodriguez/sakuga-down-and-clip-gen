@@ -166,7 +166,7 @@ class SakugaDownAndClipGen {
         this.app.use(express_1.default.urlencoded({ extended: true }));
         // Servir archivos estáticos
         this.app.use(express_1.default.static(path.join(__dirname, '../public')));
-        // Servir los videos y clips descargados
+        // Servir los videos, clips e imágenes descargados
         this.app.use('/downloads', express_1.default.static(this.downloadDirectory));
         this.app.use('/clips', express_1.default.static(this.clipDirectory));
         this.app.use('/beat_synced_videos', express_1.default.static(this.beatSyncedVideosDirectory));
@@ -187,6 +187,8 @@ class SakugaDownAndClipGen {
         this.app.post('/api/download-images', this.queryUpload.single('queriesFile'), this.handlePostDownloadImages.bind(this));
         // API para generar clips de un video
         this.app.post('/api/generate-clips', this.handlePostGenerateClips.bind(this));
+        // API para eliminar una imagen
+        this.app.post('/api/delete-image', this.handlePostDeleteImage.bind(this));
         // API para generar clips de todos los videos en una carpeta
         this.app.post('/api/generate-clips-from-folder', this.handlePostGenerateClipsFromFolder.bind(this));
         // API para descargar y generar clips en un solo paso
