@@ -99,6 +99,28 @@ Una aplicación para descargar videos de Sakugabooru y generar clips automática
     *   **Para la interfaz de línea de comandos (CLI):**
         Consulta la sección "Uso de la CLI" para ver ejemplos de comandos. Si no usaste `npm link`, ejecutarás los comandos con `node dist/index.js <comando> [opciones]`.
 
+## Docker
+
+Tambien es posible ejecutar la aplicacion usando Docker.
+
+### Construir la imagen
+```bash
+docker build -t sakuga-app .
+```
+
+### Ejecutar el contenedor
+```bash
+docker run -p 3000:3000 sakuga-app
+```
+
+Si prefieres usar docker-compose, el proyecto incluye un archivo de ejemplo:
+```bash
+docker-compose up --build
+```
+
+Luego visita http://localhost:3000 en tu navegador.
+
+
 ## Uso
 
 1. Acceder a la interfaz web en http://localhost:3000
