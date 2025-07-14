@@ -177,6 +177,8 @@ class SakugaDownAndClipGen {
         this.app.post('/api/download-and-clip', this.handlePostDownloadAndClip.bind(this));
         // API para eliminar un clip
         this.app.post('/api/delete-clip', this.handlePostDeleteClip.bind(this));
+        // API para eliminar todos los clips de un video
+        this.app.post('/api/delete-clips-folder', this.handlePostDeleteClipsFolder.bind(this));
         // API para eliminar un video descargado
         this.app.post('/api/delete-video', this.handlePostDeleteVideo.bind(this));
         // API for listing clip folders and renaming videos
@@ -576,6 +578,41 @@ class SakugaDownAndClipGen {
             }
             catch (error) {
                 console.error('Error al eliminar clip:', error);
+                res.status(500).json({ error: error.message });
+            }
+        });
+    }
+    /**
+     * Maneja la solicitud para eliminar todos los clips de un video (carpeta)
+     */
+    handlePostDeleteClipsFolder(req, res) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const { folderPath } = req.body;
+                if (!folderPath) {
+                    res.status(400).json({ error: 'Se requiere la carpeta de clips a eliminar' });
+                    return;
+                }
+                const fullFolderPath = path.join(this.clipDirectory, folderPath);
+                console.log(`Intentando eliminar carpeta de clips: ${fullFolderPath}`);
+                if (!fs.existsSync(fullFolderPath) || !fs.statSync(fullFolderPath).isDirectory()) {
+                    res.status(404).json({ error: 'Carpeta no encontrada' });
+                    return;
+                }
+                const normalizedBase = path.normalize(this.clipDirectory);
+                const normalizedFull = path.normalize(fullFolderPath);
+                if (!normalizedFull.startsWith(normalizedBase)) {
+                    res.status(403).json({ error: 'Acceso denegado: ruta de carpeta no permitida' });
+                    return;
+                }
+                fs.rmSync(fullFolderPath, { recursive: true, force: true });
+                console.log(`Carpeta de clips eliminada: ${folderPath}`);
+                const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
+                this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
+                res.json({ success: true, message: 'Clips eliminados correctamente' });
+            }
+            catch (error) {
+                console.error('Error al eliminar carpeta de clips:', error);
                 res.status(500).json({ error: error.message });
             }
         });
