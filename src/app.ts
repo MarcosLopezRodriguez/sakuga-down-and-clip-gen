@@ -305,8 +305,8 @@ export class SakugaDownAndClipGen {
 
     private async handlePostGenerateClipsFromFolder(req: express.Request, res: express.Response): Promise<void> {
         try {
-            const { folderPath, minDuration, maxDuration, threshold, useFFmpeg } = req.body;
-            if (!folderPath) {
+            const { folderPath = '', minDuration, maxDuration, threshold, useFFmpeg } = req.body;
+            if (folderPath === undefined) {
                 res.status(400).json({ error: 'Se requiere la ruta de la carpeta' });
                 return;
             }
