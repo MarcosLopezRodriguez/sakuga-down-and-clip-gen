@@ -1482,7 +1482,6 @@ async function deleteVideo(videoPath) {
 
 // Function to delete all clips inside a folder (video)
 async function deleteClipsFolder(folderPath, removeSelector) {
-    if (!confirm(`¿Eliminar todos los clips de ${folderPath}?`)) return;
     try {
         const response = await fetch('/api/delete-clips-folder', {
             method: 'POST',
