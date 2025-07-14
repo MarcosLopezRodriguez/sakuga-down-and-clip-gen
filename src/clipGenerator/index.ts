@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { execSync } from 'child_process';
+import ffprobe from 'ffprobe-static';
 
 /**
  * Opciones para la detección de escenas
@@ -14,7 +15,7 @@ export interface SceneDetectionOptions {
 
 // Configuración de rutas para FFmpeg
 let FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
-let FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
+let FFPROBE_PATH = process.env.FFPROBE_PATH || ffprobe.path;
 
 // Función para verificar si un ejecutable está disponible
 function isExecutableAvailable(executableName: string): boolean {
@@ -72,11 +73,12 @@ function findFFmpegPath(): string | null {
 const ffmpegPath = findFFmpegPath();
 if (ffmpegPath) {
     FFMPEG_PATH = ffmpegPath;
-    FFPROBE_PATH = ffmpegPath.replace('ffmpeg.exe', 'ffprobe.exe');
+    FFPROBE_PATH = process.env.FFPROBE_PATH || ffmpegPath.replace('ffmpeg.exe', 'ffprobe.exe');
     console.log(`FFmpeg detectado en: ${FFMPEG_PATH}`);
     console.log(`FFprobe detectado en: ${FFPROBE_PATH}`);
 } else {
     console.warn('No se pudo detectar FFmpeg automáticamente. Se intentará usar los comandos "ffmpeg" y "ffprobe" directamente.');
+    FFPROBE_PATH = process.env.FFPROBE_PATH || ffprobe.path;
 }
 
 export class ClipGenerator {

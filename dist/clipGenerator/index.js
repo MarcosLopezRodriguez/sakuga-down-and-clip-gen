@@ -41,15 +41,19 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ClipGenerator = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const child_process_1 = require("child_process");
 const child_process_2 = require("child_process");
+const ffprobe_static_1 = __importDefault(require("ffprobe-static"));
 // Configuración de rutas para FFmpeg
 let FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
-let FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
+let FFPROBE_PATH = process.env.FFPROBE_PATH || ffprobe_static_1.default.path;
 // Función para verificar si un ejecutable está disponible
 function isExecutableAvailable(executableName) {
     try {
@@ -104,12 +108,13 @@ function findFFmpegPath() {
 const ffmpegPath = findFFmpegPath();
 if (ffmpegPath) {
     FFMPEG_PATH = ffmpegPath;
-    FFPROBE_PATH = ffmpegPath.replace('ffmpeg.exe', 'ffprobe.exe');
+    FFPROBE_PATH = process.env.FFPROBE_PATH || ffmpegPath.replace('ffmpeg.exe', 'ffprobe.exe');
     console.log(`FFmpeg detectado en: ${FFMPEG_PATH}`);
     console.log(`FFprobe detectado en: ${FFPROBE_PATH}`);
 }
 else {
     console.warn('No se pudo detectar FFmpeg automáticamente. Se intentará usar los comandos "ffmpeg" y "ffprobe" directamente.');
+    FFPROBE_PATH = process.env.FFPROBE_PATH || ffprobe_static_1.default.path;
 }
 class ClipGenerator {
     constructor(outputDirectory = 'output/clips', ffmpegPath, ffprobePath) {

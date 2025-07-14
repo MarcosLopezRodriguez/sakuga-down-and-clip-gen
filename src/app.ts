@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import http from 'http';
 import { Server, Socket } from 'socket.io';
 import { spawn } from 'child_process';
+import ffprobe from 'ffprobe-static';
 
 // Interface for requests with file uploads
 interface RequestWithFile extends Request {
@@ -43,7 +44,7 @@ export class SakugaDownAndClipGen {
 
         // Define FFMPEG paths locally
         const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
-        const FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
+        const FFPROBE_PATH = process.env.FFPROBE_PATH || ffprobe.path;
 
         this.audioAnalyzer = new AudioAnalyzer(FFMPEG_PATH);
         this.beatSyncedVideosDirectory = beatSyncedVideosDirectory;
@@ -882,7 +883,7 @@ export class SakugaDownAndClipGen {
      */
     private async getVideoDurationFFprobe(videoPath: string): Promise<number> {
         return new Promise((resolve, reject) => {
-            const ffprobePath = process.env.FFPROBE_PATH || 'ffprobe';
+            const ffprobePath = process.env.FFPROBE_PATH || ffprobe.path;
             const args = [
                 '-v', 'error',
                 '-show_entries', 'format=duration',

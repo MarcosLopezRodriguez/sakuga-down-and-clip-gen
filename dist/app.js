@@ -57,13 +57,14 @@ const fs = __importStar(require("fs"));
 const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
 const child_process_1 = require("child_process");
+const ffprobe_static_1 = __importDefault(require("ffprobe-static"));
 class SakugaDownAndClipGen {
     constructor(downloadDirectory = 'output/downloads', clipDirectory = 'output/clips', randomNamesDirectory = 'output/random_names', tempAudioDirectory = 'output/temp_audio', beatSyncedVideosDirectory = 'output/beat_synced_videos', port = 3000) {
         this.downloader = new downloader_1.Downloader('https://www.sakugabooru.com', downloadDirectory);
         this.clipGenerator = new clipGenerator_1.ClipGenerator(clipDirectory); // FFMPEG_PATH and FFPROBE_PATH are resolved within ClipGenerator
         // Define FFMPEG paths locally
         const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
-        const FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
+        const FFPROBE_PATH = process.env.FFPROBE_PATH || ffprobe_static_1.default.path;
         this.audioAnalyzer = new audioAnalyzer_1.AudioAnalyzer(FFMPEG_PATH);
         this.beatSyncedVideosDirectory = beatSyncedVideosDirectory;
         this.beatSyncGenerator = new beatSyncGenerator_1.BeatSyncGenerator(FFMPEG_PATH, FFPROBE_PATH, this.beatSyncedVideosDirectory);
@@ -798,7 +799,7 @@ class SakugaDownAndClipGen {
     getVideoDurationFFprobe(videoPath) {
         return __awaiter(this, void 0, void 0, function* () {
             return new Promise((resolve, reject) => {
-                const ffprobePath = process.env.FFPROBE_PATH || 'ffprobe';
+                const ffprobePath = process.env.FFPROBE_PATH || ffprobe_static_1.default.path;
                 const args = [
                     '-v', 'error',
                     '-show_entries', 'format=duration',
