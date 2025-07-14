@@ -281,7 +281,17 @@ class SakugaDownAndClipGen {
                 };
                 // Se usa siempre PySceneDetect con fallback a FFmpeg
                 const clipPaths = yield this.clipGenerator.detectScenesAndGenerateClips(videoPath, sceneOptions);
-                res.json({ success: true, clipPaths });
+                const clipInfos = yield Promise.all(clipPaths.map((p) => __awaiter(this, void 0, void 0, function* () {
+                    let duration = 0;
+                    try {
+                        duration = yield this.getVideoDurationFFprobe(p);
+                    }
+                    catch (e) {
+                        console.warn(`No se pudo obtener la duración de ${p}:`, e);
+                    }
+                    return { path: p.replace(/\\/g, '/'), duration };
+                })));
+                res.json({ success: true, clipPaths, clipInfos });
             }
             catch (error) {
                 res.status(500).json({ error: error.message });
@@ -345,7 +355,8 @@ class SakugaDownAndClipGen {
                             if (responseData && responseData.success) {
                                 results.push({
                                     videoPath: fullPath.replace(/\\/g, '/'),
-                                    clipPaths: responseData.clipPaths.map((p) => p.replace(/\\/g, '/'))
+                                    clipPaths: responseData.clipPaths.map((p) => p.replace(/\\/g, '/')),
+                                    clipInfos: responseData.clipInfos.map((c) => ({ path: c.path.replace(/\\/g, '/'), duration: c.duration }))
                                 });
                             }
                         }

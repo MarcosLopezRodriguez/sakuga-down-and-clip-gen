@@ -302,7 +302,19 @@ export class SakugaDownAndClipGen {
                 sceneOptions
             );
 
-            res.json({ success: true, clipPaths });
+            const clipInfos = await Promise.all(
+                clipPaths.map(async (p) => {
+                    let duration = 0;
+                    try {
+                        duration = await this.getVideoDurationFFprobe(p);
+                    } catch (e) {
+                        console.warn(`No se pudo obtener la duración de ${p}:`, e);
+                    }
+                    return { path: p.replace(/\\/g, '/'), duration };
+                })
+            );
+
+            res.json({ success: true, clipPaths, clipInfos });
         } catch (error: any) {
             res.status(500).json({ error: error.message });
         }
@@ -332,7 +344,7 @@ export class SakugaDownAndClipGen {
             }
 
             // Crear un mock request y response para reutilizar handlePostGenerateClips
-            const results: Array<{ videoPath: string, clipPaths: string[] }> = [];
+            const results: Array<{ videoPath: string, clipPaths: string[], clipInfos: { path: string, duration: number }[] }> = [];
             const processDirectory = async (dirPath: string) => {
                 const entries = fs.readdirSync(dirPath, { withFileTypes: true });
 
@@ -370,7 +382,8 @@ export class SakugaDownAndClipGen {
                         if (responseData && responseData.success) {
                             results.push({
                                 videoPath: fullPath.replace(/\\/g, '/'),
-                                clipPaths: responseData.clipPaths.map((p: string) => p.replace(/\\/g, '/'))
+                                clipPaths: responseData.clipPaths.map((p: string) => p.replace(/\\/g, '/')),
+                                clipInfos: responseData.clipInfos.map((c: any) => ({ path: c.path.replace(/\\/g, '/'), duration: c.duration }))
                             });
                         }
                     }

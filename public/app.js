@@ -1736,6 +1736,10 @@ async function generateClips(videoPath, minDuration, maxDuration, threshold, use
             const videoName = videoPath.split('/').pop();
             const folderName = videoName.replace(/\.[^/.]+$/, '');
 
+            const totalDuration = Array.isArray(data.clipInfos)
+                ? data.clipInfos.reduce((sum, c) => sum + (c.duration || 0), 0)
+                : 0;
+
             const group = document.createElement('div');
             group.id = `clips-group-gen-${folderName.replace(/[^a-zA-Z0-9]/g, '-')}`;
 
@@ -1744,13 +1748,16 @@ async function generateClips(videoPath, minDuration, maxDuration, threshold, use
             const slugGen = folderName.replace(/[^a-zA-Z0-9]/g, '-');
             headerRow.innerHTML = `
                 <div class="col-12 d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${data.clipPaths.length} clips</span></h5>
-                    <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${folderName}" title="Borrar todos los clips">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                    <button class="btn btn-sm btn-warning ms-2 delete-selected-btn" id="delete-selected-btn-${slugGen}" style="display:none;">
-                        <i class="bi bi-trash"></i> Eliminar seleccionados (<span class="selected-count">0</span>)
-                    </button>
+                    <div>
+                        <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${data.clipPaths.length} clips</span></h5>
+                        <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${folderName}" title="Borrar todos los clips">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                        <button class="btn btn-sm btn-warning ms-2 delete-selected-btn" id="delete-selected-btn-${slugGen}" style="display:none;">
+                            <i class="bi bi-trash"></i> Eliminar seleccionados (<span class="selected-count">0</span>)
+                        </button>
+                        <div><small class="text-muted">Duración total: ${Math.round(totalDuration)} segundos</small></div>
+                    </div>
                 </div>`;
             group.appendChild(headerRow);
 
@@ -1860,6 +1867,10 @@ async function generateClipsFromFolder(folderPath, minDuration, maxDuration, thr
                     const videoName = result.videoPath.split('/').pop();
                     const folderName = videoName.replace(/\.[^/.]+$/, '');
 
+                    const totalDuration = Array.isArray(result.clipInfos)
+                        ? result.clipInfos.reduce((sum, c) => sum + (c.duration || 0), 0)
+                        : 0;
+
                     const group = document.createElement('div');
                     group.id = `clips-group-gen-${folderName.replace(/[^a-zA-Z0-9]/g, '-')}`;
 
@@ -1868,13 +1879,16 @@ async function generateClipsFromFolder(folderPath, minDuration, maxDuration, thr
                     const slugFolder = folderName.replace(/[^a-zA-Z0-9]/g, '-');
                     headerRow.innerHTML = `
                         <div class="col-12 d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${result.clipPaths.length} clips</span></h5>
-                            <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${folderName}" title="Borrar todos los clips">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                            <button class="btn btn-sm btn-warning ms-2 delete-selected-btn" id="delete-selected-btn-${slugFolder}" style="display:none;">
-                                <i class="bi bi-trash"></i> Eliminar seleccionados (<span class="selected-count">0</span>)
-                            </button>
+                            <div>
+                                <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${result.clipPaths.length} clips</span></h5>
+                                <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${folderName}" title="Borrar todos los clips">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                                <button class="btn btn-sm btn-warning ms-2 delete-selected-btn" id="delete-selected-btn-${slugFolder}" style="display:none;">
+                                    <i class="bi bi-trash"></i> Eliminar seleccionados (<span class="selected-count">0</span>)
+                                </button>
+                                <div><small class="text-muted">Duración total: ${Math.round(totalDuration)} segundos</small></div>
+                            </div>
                         </div>`;
                     group.appendChild(headerRow);
 
