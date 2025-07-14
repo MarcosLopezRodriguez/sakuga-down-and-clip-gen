@@ -283,8 +283,8 @@ class SakugaDownAndClipGen {
     handlePostGenerateClipsFromFolder(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const { folderPath, minDuration, maxDuration, threshold, useFFmpeg } = req.body;
-                if (!folderPath) {
+                const { folderPath = '', minDuration, maxDuration, threshold, useFFmpeg } = req.body;
+                if (folderPath === undefined) {
                     res.status(400).json({ error: 'Se requiere la ruta de la carpeta' });
                     return;
                 }
