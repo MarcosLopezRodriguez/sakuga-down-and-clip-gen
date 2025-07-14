@@ -1121,6 +1121,7 @@ function displayGeneratedClips(clips) {
 
         let currentPage = videoPaginationState.get(videoName).currentPage;
         const totalPages = Math.ceil(videoClips.length / CLIPS_PER_PAGE);
+        const totalDuration = videoClips.reduce((sum, c) => sum + (c.duration || 0), 0);
 
         // Adjust current page if it's now invalid (happens when deleting clips)
         if (currentPage > totalPages && totalPages > 0) {
@@ -1151,6 +1152,7 @@ function displayGeneratedClips(clips) {
                     <button class="btn btn-sm btn-warning ms-2 delete-selected-btn" id="delete-selected-btn-${slug}" style="display:none;">
                         <i class="bi bi-trash"></i> Eliminar seleccionados (<span class="selected-count">0</span>)
                     </button>
+                    <div><small class="text-muted">Duración total: ${Math.round(totalDuration)} segundos</small></div>
                 </div>
                 <div class="pagination-info">
                     <small class="text-muted">Página ${currentPage} de ${totalPages}</small>
