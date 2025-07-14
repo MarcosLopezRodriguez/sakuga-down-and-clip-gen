@@ -457,6 +457,18 @@ class SakugaDownAndClipGen {
     // Handler for renaming videos using the Python script
     handleRenameVideos(req, res) {
         const { selectedFolders, outputSubfolder } = req.body;
+        // Ensure the output subfolder ends with '_random'
+        let sanitizedSubfolder = outputSubfolder ? outputSubfolder.trim() : '';
+        if (sanitizedSubfolder === '') {
+            res.status(400).json({
+                status: "error",
+                message: "Invalid request body. 'outputSubfolder' is required and must be a non-empty string."
+            });
+            return;
+        }
+        if (!sanitizedSubfolder.endsWith('_random')) {
+            sanitizedSubfolder += '_random';
+        }
         if (!selectedFolders || !Array.isArray(selectedFolders) || selectedFolders.length === 0) {
             res.status(400).json({
                 status: "error",
@@ -464,16 +476,9 @@ class SakugaDownAndClipGen {
             });
             return;
         }
-        if (!outputSubfolder || typeof outputSubfolder !== 'string' || outputSubfolder.trim() === '') {
-            res.status(400).json({
-                status: "error",
-                message: "Invalid request body. 'outputSubfolder' is required and must be a non-empty string."
-            });
-            return;
-        }
         const clipsBaseDir = this.clipDirectory; // output/clips
         const inputDirs = selectedFolders.map(folder => path.join(clipsBaseDir, folder));
-        const outputDir = path.join(this.randomNamesDirectory, outputSubfolder.trim());
+        const outputDir = path.join(this.randomNamesDirectory, sanitizedSubfolder);
         // Ensure output directory for the script exists, though the script should also handle this
         try {
             if (!fs.existsSync(outputDir)) {

@@ -388,7 +388,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const selectedCheckboxes = folderListContainer.querySelectorAll('input[type="checkbox"]:checked');
         const selectedFolders = Array.from(selectedCheckboxes).map(cb => cb.value);
-        const outputSubfolderName = document.getElementById('outputSubfolderName').value.trim();
+        let outputSubfolderName = document.getElementById('outputSubfolderName').value.trim();
+        if (!outputSubfolderName.endsWith('_random')) {
+            outputSubfolderName += '_random';
+        }
 
         renameFeedback.innerHTML = '';
         renameFeedback.className = 'mt-3'; // Reset class
