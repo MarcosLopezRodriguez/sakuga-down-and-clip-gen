@@ -1095,7 +1095,7 @@ function displayGeneratedClips(clips) {
                 e.stopPropagation();
                 const folder = deleteAllBtn.getAttribute('data-folder');
                 if (folder) {
-                    deleteClipsFolder(folder);
+                    deleteClipsFolder(folder, `#${videoSection.id}`);
                 }
             });
         }
@@ -1481,7 +1481,7 @@ async function deleteVideo(videoPath) {
 }
 
 // Function to delete all clips inside a folder (video)
-async function deleteClipsFolder(folderPath) {
+async function deleteClipsFolder(folderPath, removeSelector) {
     if (!confirm(`¿Eliminar todos los clips de ${folderPath}?`)) return;
     try {
         const response = await fetch('/api/delete-clips-folder', {
@@ -1498,6 +1498,10 @@ async function deleteClipsFolder(folderPath) {
         }
 
         console.log(`Carpeta de clips eliminada: ${folderPath}`);
+        const groupEl = removeSelector ? document.querySelector(removeSelector) : null;
+        if (groupEl) {
+            groupEl.remove();
+        }
         videoPaginationState.delete(folderPath);
         await loadVideoLists();
     } catch (error) {
@@ -1629,6 +1633,35 @@ async function generateClips(videoPath, minDuration, maxDuration, threshold, use
 
         // Display clip results
         if (data.clipPaths && data.clipPaths.length > 0) {
+            const videoName = videoPath.split('/').pop();
+            const folderName = videoName.replace(/\.[^/.]+$/, '');
+
+            const group = document.createElement('div');
+            group.id = `clips-group-gen-${folderName.replace(/[^a-zA-Z0-9]/g, '-')}`;
+
+            const headerRow = document.createElement('div');
+            headerRow.className = 'row mb-2';
+            headerRow.innerHTML = `
+                <div class="col-12 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${data.clipPaths.length} clips</span></h5>
+                    <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${folderName}" title="Borrar todos los clips">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>`;
+            group.appendChild(headerRow);
+
+            const deleteAllBtn = headerRow.querySelector('.delete-all-clips-btn');
+            if (deleteAllBtn) {
+                deleteAllBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteClipsFolder(folderName, `#${group.id}`);
+                });
+            }
+
+            const clipsRow = document.createElement('div');
+            clipsRow.className = 'row mb-4';
+            group.appendChild(clipsRow);
+
             data.clipPaths.forEach(clipPath => {
                 const clipCol = document.createElement('div');
                 clipCol.className = 'col-md-4 mb-3';
@@ -1682,7 +1715,7 @@ async function generateClips(videoPath, minDuration, maxDuration, threshold, use
                 cardBody.appendChild(cardTitle);
                 clipCard.appendChild(cardBody);
                 clipCol.appendChild(clipCard);
-                resultsContainer.appendChild(clipCol);
+                clipsRow.appendChild(clipCol);
 
                 // Add click event to play/pause when clicking the card (not on controls)
                 clipCard.addEventListener('click', (e) => {
@@ -1696,6 +1729,8 @@ async function generateClips(videoPath, minDuration, maxDuration, threshold, use
                     }
                 });
             });
+
+            resultsContainer.appendChild(group);
         } else {
             resultsContainer.innerHTML = '<div class="alert alert-warning">No se generaron clips</div>';
         }
@@ -1769,15 +1804,35 @@ async function generateClipsFromFolder(folderPath, minDuration, maxDuration, thr
                 if (result.clipPaths && result.clipPaths.length > 0) {
                     // Add a header for each video's clips
                     const videoName = result.videoPath.split('/').pop();
+                    const folderName = videoName.replace(/\.[^/.]+$/, '');
+
+                    const group = document.createElement('div');
+                    group.id = `clips-group-gen-${folderName.replace(/[^a-zA-Z0-9]/g, '-')}`;
+
                     const headerRow = document.createElement('div');
                     headerRow.className = 'row mb-2';
-                    headerRow.innerHTML = `<div class="col-12"><h5>${videoName}</h5></div>`;
-                    resultsContainer.appendChild(headerRow);
+                    headerRow.innerHTML = `
+                        <div class="col-12 d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${result.clipPaths.length} clips</span></h5>
+                            <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${folderName}" title="Borrar todos los clips">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>`;
+                    group.appendChild(headerRow);
+
+                    const deleteAllBtn = headerRow.querySelector('.delete-all-clips-btn');
+                    if (deleteAllBtn) {
+                        deleteAllBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            deleteClipsFolder(folderName, `#${group.id}`);
+                        });
+                    }
 
                     // Create a row for the clips
                     const clipsRow = document.createElement('div');
                     clipsRow.className = 'row mb-4';
-                    clipsRow.id = `clips-group-gen-${videoName.replace(/[^a-zA-Z0-9]/g, '-')}`;
+                    group.appendChild(clipsRow);
+                    clipsRow.id = `clips-group-gen-${folderName.replace(/[^a-zA-Z0-9]/g, '-')}`;
 
                     result.clipPaths.forEach((clipPath, index) => {
                         const clipCol = document.createElement('div');
@@ -1847,7 +1902,7 @@ async function generateClipsFromFolder(folderPath, minDuration, maxDuration, thr
                         });
                     });
 
-                    resultsContainer.appendChild(clipsRow);
+                    resultsContainer.appendChild(group);
                 }
             });
         } else {
