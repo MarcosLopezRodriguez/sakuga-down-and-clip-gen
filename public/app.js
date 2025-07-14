@@ -94,7 +94,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('generateClipsForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const folderPath = document.getElementById('folderSelect').value;
-        if (!folderPath) return;
 
         const minDuration = parseFloat(document.getElementById('minDuration').value) || 1.0;
         const maxDuration = parseFloat(document.getElementById('maxDuration').value) || 3.0;
@@ -102,7 +101,22 @@ document.addEventListener('DOMContentLoaded', () => {
         // Eliminado el checkbox useFFmpeg, siempre usamos PySceneDetect con fallback a FFmpeg
 
         await generateClipsFromFolder(folderPath, minDuration, maxDuration, threshold);
-    });    // Handle browser tab switching to refresh content
+    });
+
+    // Generate clips for all folders
+    const generateAllBtn = document.getElementById('generateAllClipsBtn');
+    if (generateAllBtn) {
+        generateAllBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const minDuration = parseFloat(document.getElementById('minDuration').value) || 1.0;
+            const maxDuration = parseFloat(document.getElementById('maxDuration').value) || 3.0;
+            const threshold = parseFloat(document.getElementById('threshold').value) || 30;
+
+            await generateClipsFromFolder('', minDuration, maxDuration, threshold);
+        });
+    }
+
+    // Handle browser tab switching to refresh content
     document.querySelectorAll('#browserTabs .nav-link').forEach(tab => {
         tab.addEventListener('shown.bs.tab', () => {
             loadVideoLists();
