@@ -1076,13 +1076,29 @@ function displayGeneratedClips(clips) {
         headerRow.className = 'row mb-2 mt-4';
         headerRow.innerHTML = `
             <div class="col-12 d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">${videoName} <span class="badge bg-secondary">${videoClips.length} clips</span></h5>
+                <div>
+                    <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${videoClips.length} clips</span></h5>
+                    <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${videoName}" title="Borrar todos los clips">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
                 <div class="pagination-info">
                     <small class="text-muted">Página ${currentPage} de ${totalPages}</small>
                 </div>
             </div>
         `;
         videoSection.appendChild(headerRow);
+
+        const deleteAllBtn = headerRow.querySelector('.delete-all-clips-btn');
+        if (deleteAllBtn) {
+            deleteAllBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const folder = deleteAllBtn.getAttribute('data-folder');
+                if (folder) {
+                    deleteClipsFolder(folder);
+                }
+            });
+        }
 
         // Create pagination controls if needed
         if (totalPages > 1) {
@@ -1460,6 +1476,32 @@ async function deleteVideo(videoPath) {
 
     } catch (error) {
         console.error('Error al eliminar video:', error);
+        alert(`Error: ${error.message}`);
+    }
+}
+
+// Function to delete all clips inside a folder (video)
+async function deleteClipsFolder(folderPath) {
+    if (!confirm(`¿Eliminar todos los clips de ${folderPath}?`)) return;
+    try {
+        const response = await fetch('/api/delete-clips-folder', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ folderPath })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Error al eliminar los clips');
+        }
+
+        console.log(`Carpeta de clips eliminada: ${folderPath}`);
+        videoPaginationState.delete(folderPath);
+        await loadVideoLists();
+    } catch (error) {
+        console.error('Error al eliminar carpeta de clips:', error);
         alert(`Error: ${error.message}`);
     }
 }
