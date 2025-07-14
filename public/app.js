@@ -1041,6 +1041,22 @@ function sanitizeId(path) {
     return path.replace(/[\\/\.]/g, '-');
 }
 
+function updateClipResultsHeader(videoName) {
+    const slug = videoName.replace(/[^a-zA-Z0-9]/g, '-');
+    const group = document.getElementById(`clips-group-gen-${slug}`);
+    if (!group) return;
+    const clipCols = group.querySelectorAll(`[data-video-name="${videoName}"]`);
+    let totalDuration = 0;
+    clipCols.forEach(col => {
+        const d = parseFloat(col.dataset.duration || '0');
+        if (!isNaN(d)) totalDuration += d;
+    });
+    const badge = group.querySelector('h5 .badge');
+    if (badge) badge.textContent = `${clipCols.length} clips`;
+    const durEl = document.getElementById(`duration-gen-${slug}`);
+    if (durEl) durEl.textContent = `Duración total: ${Math.round(totalDuration)} segundos`;
+}
+
 function updateDeleteSelectedButton(videoName) {
     const slug = videoName.replace(/[^a-zA-Z0-9]/g, '-');
     const btn = document.getElementById(`delete-selected-btn-${slug}`);
@@ -1121,6 +1137,7 @@ function displayGeneratedClips(clips) {
 
         let currentPage = videoPaginationState.get(videoName).currentPage;
         const totalPages = Math.ceil(videoClips.length / CLIPS_PER_PAGE);
+        const totalDuration = videoClips.reduce((sum, c) => sum + (c.duration || 0), 0);
 
         // Adjust current page if it's now invalid (happens when deleting clips)
         if (currentPage > totalPages && totalPages > 0) {
@@ -1151,6 +1168,7 @@ function displayGeneratedClips(clips) {
                     <button class="btn btn-sm btn-warning ms-2 delete-selected-btn" id="delete-selected-btn-${slug}" style="display:none;">
                         <i class="bi bi-trash"></i> Eliminar seleccionados (<span class="selected-count">0</span>)
                     </button>
+                    <div><small class="text-muted">Duración total: ${Math.round(totalDuration)} segundos</small></div>
                 </div>
                 <div class="pagination-info">
                     <small class="text-muted">Página ${currentPage} de ${totalPages}</small>
@@ -1215,6 +1233,9 @@ function createClipElement(clip, globalIndex) {
     clipCol.dataset.clipPath = clip.path;
     const videoNameForSel = clip.path.split('/')[0];
     clipCol.dataset.videoName = videoNameForSel;
+    if (typeof clip.duration === 'number') {
+        clipCol.dataset.duration = clip.duration;
+    }
 
     const clipCard = document.createElement('div');
     clipCard.className = 'card video-card position-relative';
@@ -1508,6 +1529,7 @@ async function deleteClip(clipPath, elementId) {
             }
         }
         updateDeleteSelectedButton(videoName);
+        updateClipResultsHeader(videoName);
 
         // Get current pagination state for this video
         const currentState = videoPaginationState.get(videoName);
@@ -1734,6 +1756,10 @@ async function generateClips(videoPath, minDuration, maxDuration, threshold, use
             const videoName = videoPath.split('/').pop();
             const folderName = videoName.replace(/\.[^/.]+$/, '');
 
+            const totalDuration = Array.isArray(data.clipInfos)
+                ? data.clipInfos.reduce((sum, c) => sum + (c.duration || 0), 0)
+                : 0;
+
             const group = document.createElement('div');
             group.id = `clips-group-gen-${folderName.replace(/[^a-zA-Z0-9]/g, '-')}`;
 
@@ -1742,13 +1768,16 @@ async function generateClips(videoPath, minDuration, maxDuration, threshold, use
             const slugGen = folderName.replace(/[^a-zA-Z0-9]/g, '-');
             headerRow.innerHTML = `
                 <div class="col-12 d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${data.clipPaths.length} clips</span></h5>
-                    <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${folderName}" title="Borrar todos los clips">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                    <button class="btn btn-sm btn-warning ms-2 delete-selected-btn" id="delete-selected-btn-${slugGen}" style="display:none;">
-                        <i class="bi bi-trash"></i> Eliminar seleccionados (<span class="selected-count">0</span>)
-                    </button>
+                    <div>
+                        <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${data.clipPaths.length} clips</span></h5>
+                        <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${folderName}" title="Borrar todos los clips">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                        <button class="btn btn-sm btn-warning ms-2 delete-selected-btn" id="delete-selected-btn-${slugGen}" style="display:none;">
+                            <i class="bi bi-trash"></i> Eliminar seleccionados (<span class="selected-count">0</span>)
+                        </button>
+                        <div><small id="duration-gen-${slugGen}" class="text-muted">Duración total: ${Math.round(totalDuration)} segundos</small></div>
+                    </div>
                 </div>`;
             group.appendChild(headerRow);
 
@@ -1772,10 +1801,18 @@ async function generateClips(videoPath, minDuration, maxDuration, threshold, use
             clipsRow.className = 'row mb-4';
             group.appendChild(clipsRow);
 
+            const durMap = new Map();
+            if (Array.isArray(data.clipInfos)) {
+                data.clipInfos.forEach(info => {
+                    const rel = info.path.replace(/^output\/clips\//, '');
+                    durMap.set(rel, info.duration);
+                });
+            }
+
             data.clipPaths.forEach(clipPath => {
                 const clipName = clipPath.split('/').pop();
                 const clipRelPath = clipPath.replace(/^output\/clips\//, '');
-                const clipObj = { path: clipRelPath, name: clipName, size: 0 };
+                const clipObj = { path: clipRelPath, name: clipName, size: 0, duration: durMap.get(clipRelPath) || 0 };
                 const clipCol = createClipElement(clipObj, 0);
                 clipCol.classList.remove('col-md-3');
                 clipCol.classList.add('col-md-4');
@@ -1858,6 +1895,10 @@ async function generateClipsFromFolder(folderPath, minDuration, maxDuration, thr
                     const videoName = result.videoPath.split('/').pop();
                     const folderName = videoName.replace(/\.[^/.]+$/, '');
 
+                    const totalDuration = Array.isArray(result.clipInfos)
+                        ? result.clipInfos.reduce((sum, c) => sum + (c.duration || 0), 0)
+                        : 0;
+
                     const group = document.createElement('div');
                     group.id = `clips-group-gen-${folderName.replace(/[^a-zA-Z0-9]/g, '-')}`;
 
@@ -1866,13 +1907,16 @@ async function generateClipsFromFolder(folderPath, minDuration, maxDuration, thr
                     const slugFolder = folderName.replace(/[^a-zA-Z0-9]/g, '-');
                     headerRow.innerHTML = `
                         <div class="col-12 d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${result.clipPaths.length} clips</span></h5>
-                            <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${folderName}" title="Borrar todos los clips">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                            <button class="btn btn-sm btn-warning ms-2 delete-selected-btn" id="delete-selected-btn-${slugFolder}" style="display:none;">
-                                <i class="bi bi-trash"></i> Eliminar seleccionados (<span class="selected-count">0</span>)
-                            </button>
+                            <div>
+                                <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${result.clipPaths.length} clips</span></h5>
+                                <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${folderName}" title="Borrar todos los clips">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                                <button class="btn btn-sm btn-warning ms-2 delete-selected-btn" id="delete-selected-btn-${slugFolder}" style="display:none;">
+                                    <i class="bi bi-trash"></i> Eliminar seleccionados (<span class="selected-count">0</span>)
+                                </button>
+                                <div><small id="duration-gen-${slugFolder}" class="text-muted">Duración total: ${Math.round(totalDuration)} segundos</small></div>
+                            </div>
                         </div>`;
                     group.appendChild(headerRow);
 
@@ -1898,10 +1942,18 @@ async function generateClipsFromFolder(folderPath, minDuration, maxDuration, thr
                     group.appendChild(clipsRow);
                     clipsRow.id = `clips-group-gen-${folderName.replace(/[^a-zA-Z0-9]/g, '-')}`;
 
+                        const durMap = new Map();
+                        if (Array.isArray(result.clipInfos)) {
+                            result.clipInfos.forEach(info => {
+                                const rel = info.path.replace(/^output\/clips\//, '');
+                                durMap.set(rel, info.duration);
+                            });
+                        }
+
                         result.clipPaths.forEach(clipPath => {
                             const clipName = clipPath.split('/').pop();
                             const clipRelPath = clipPath.replace(/^output\/clips\//, '');
-                            const clipObj = { path: clipRelPath, name: clipName, size: 0 };
+                            const clipObj = { path: clipRelPath, name: clipName, size: 0, duration: durMap.get(clipRelPath) || 0 };
                             const clipCol = createClipElement(clipObj, 0);
                             clipCol.classList.remove('col-md-3');
                             clipCol.classList.add('col-md-4');

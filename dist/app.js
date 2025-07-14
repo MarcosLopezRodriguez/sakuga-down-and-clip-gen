@@ -57,13 +57,14 @@ const fs = __importStar(require("fs"));
 const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
 const child_process_1 = require("child_process");
+const ffprobe_static_1 = __importDefault(require("ffprobe-static"));
 class SakugaDownAndClipGen {
     constructor(downloadDirectory = 'output/downloads', clipDirectory = 'output/clips', randomNamesDirectory = 'output/random_names', tempAudioDirectory = 'output/temp_audio', beatSyncedVideosDirectory = 'output/beat_synced_videos', port = 3000) {
         this.downloader = new downloader_1.Downloader('https://www.sakugabooru.com', downloadDirectory);
         this.clipGenerator = new clipGenerator_1.ClipGenerator(clipDirectory); // FFMPEG_PATH and FFPROBE_PATH are resolved within ClipGenerator
         // Define FFMPEG paths locally
         const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
-        const FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
+        const FFPROBE_PATH = process.env.FFPROBE_PATH || ffprobe_static_1.default.path;
         this.audioAnalyzer = new audioAnalyzer_1.AudioAnalyzer(FFMPEG_PATH);
         this.beatSyncedVideosDirectory = beatSyncedVideosDirectory;
         this.beatSyncGenerator = new beatSyncGenerator_1.BeatSyncGenerator(FFMPEG_PATH, FFPROBE_PATH, this.beatSyncedVideosDirectory);
@@ -199,9 +200,17 @@ class SakugaDownAndClipGen {
         res.json(downloads);
     }
     handleGetClips(req, res) {
-        // Only return video files to avoid showing directories or full videos
-        const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
-        res.json(clips);
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const clips = (yield this.getDirectoryContentsWithDuration(this.clipDirectory))
+                    .filter(item => item.type === 'video');
+                res.json(clips);
+            }
+            catch (error) {
+                console.error('Error obteniendo clips:', error);
+                res.status(500).json({ error: error.message });
+            }
+        });
     }
     handlePostDownload(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -273,7 +282,17 @@ class SakugaDownAndClipGen {
                 };
                 // Se usa siempre PySceneDetect con fallback a FFmpeg
                 const clipPaths = yield this.clipGenerator.detectScenesAndGenerateClips(videoPath, sceneOptions);
-                res.json({ success: true, clipPaths });
+                const clipInfos = yield Promise.all(clipPaths.map((p) => __awaiter(this, void 0, void 0, function* () {
+                    let duration = 0;
+                    try {
+                        duration = yield this.getVideoDurationFFprobe(p);
+                    }
+                    catch (e) {
+                        console.warn(`No se pudo obtener la duración de ${p}:`, e);
+                    }
+                    return { path: p.replace(/\\/g, '/'), duration };
+                })));
+                res.json({ success: true, clipPaths, clipInfos });
             }
             catch (error) {
                 res.status(500).json({ error: error.message });
@@ -337,7 +356,8 @@ class SakugaDownAndClipGen {
                             if (responseData && responseData.success) {
                                 results.push({
                                     videoPath: fullPath.replace(/\\/g, '/'),
-                                    clipPaths: responseData.clipPaths.map((p) => p.replace(/\\/g, '/'))
+                                    clipPaths: responseData.clipPaths.map((p) => p.replace(/\\/g, '/')),
+                                    clipInfos: responseData.clipInfos.map((c) => ({ path: c.path.replace(/\\/g, '/'), duration: c.duration }))
                                 });
                             }
                         }
@@ -345,7 +365,7 @@ class SakugaDownAndClipGen {
                 });
                 yield processDirectory(videosDirectory);
                 // Notificar la actualización de la lista de clips
-                const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
+                const clips = (yield this.getDirectoryContentsWithDuration(this.clipDirectory)).filter(item => item.type === 'video');
                 this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
                 res.json({ success: true, results });
             }
@@ -572,7 +592,7 @@ class SakugaDownAndClipGen {
                     }
                 }
                 // Actualizar la lista de clips y notificar a los clientes
-                const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
+                const clips = (yield this.getDirectoryContentsWithDuration(this.clipDirectory)).filter(item => item.type === 'video');
                 this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
                 res.json({ success: true, message: 'Clip eliminado correctamente' });
             }
@@ -607,7 +627,7 @@ class SakugaDownAndClipGen {
                 }
                 fs.rmSync(fullFolderPath, { recursive: true, force: true });
                 console.log(`Carpeta de clips eliminada: ${folderPath}`);
-                const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
+                const clips = (yield this.getDirectoryContentsWithDuration(this.clipDirectory)).filter(item => item.type === 'video');
                 this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
                 res.json({ success: true, message: 'Clips eliminados correctamente' });
             }
@@ -774,6 +794,101 @@ class SakugaDownAndClipGen {
         return contents;
     }
     /**
+     * Obtiene la duración de un video utilizando FFprobe
+     */
+    getVideoDurationFFprobe(videoPath) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve, reject) => {
+                const ffprobePath = process.env.FFPROBE_PATH || ffprobe_static_1.default.path;
+                const args = [
+                    '-v', 'error',
+                    '-show_entries', 'format=duration',
+                    '-of', 'default=noprint_wrappers=1:nokey=1',
+                    videoPath
+                ];
+                const ffprobeProcess = (0, child_process_1.spawn)(ffprobePath, args);
+                let stdoutData = '';
+                let stderrData = '';
+                ffprobeProcess.stdout.on('data', (data) => {
+                    stdoutData += data.toString();
+                });
+                ffprobeProcess.stderr.on('data', (data) => {
+                    stderrData += data.toString();
+                });
+                ffprobeProcess.on('close', (code) => {
+                    if (code === 0) {
+                        const duration = parseFloat(stdoutData.trim());
+                        if (!isNaN(duration)) {
+                            resolve(duration);
+                        }
+                        else {
+                            reject(new Error('Could not parse video duration'));
+                        }
+                    }
+                    else {
+                        console.error('FFprobe stderr:', stderrData);
+                        reject(new Error(`FFprobe process exited with code ${code}`));
+                    }
+                });
+                ffprobeProcess.on('error', (err) => {
+                    reject(new Error(`Failed to start FFprobe process: ${err.message}`));
+                });
+            });
+        });
+    }
+    /**
+     * Obtiene el contenido de un directorio e incluye la duración de los videos
+     */
+    getDirectoryContentsWithDuration(directory_1) {
+        return __awaiter(this, arguments, void 0, function* (directory, baseFolder = '') {
+            const contents = [];
+            if (!fs.existsSync(directory)) {
+                return contents;
+            }
+            const processDirectory = (dir_1, ...args_1) => __awaiter(this, [dir_1, ...args_1], void 0, function* (dir, relativePath = '') {
+                const entries = fs.readdirSync(dir, { withFileTypes: true });
+                for (const entry of entries) {
+                    const fullPath = path.join(dir, entry.name);
+                    let entryRelativePath;
+                    if (baseFolder) {
+                        entryRelativePath = path.join(baseFolder, relativePath, entry.name);
+                    }
+                    else {
+                        entryRelativePath = relativePath ? path.join(relativePath, entry.name) : entry.name;
+                    }
+                    if (entry.isDirectory()) {
+                        contents.push({
+                            name: entry.name,
+                            path: entryRelativePath,
+                            type: 'directory',
+                            size: 0
+                        });
+                        yield processDirectory(fullPath, path.join(relativePath, entry.name));
+                    }
+                    else if (entry.isFile() && /\.(mp4|webm|mkv)$/i.test(entry.name)) {
+                        const stats = fs.statSync(fullPath);
+                        let duration = 0;
+                        try {
+                            duration = yield this.getVideoDurationFFprobe(fullPath);
+                        }
+                        catch (e) {
+                            console.warn(`No se pudo obtener la duración de ${fullPath}:`, e);
+                        }
+                        contents.push({
+                            name: entry.name,
+                            path: entryRelativePath,
+                            type: 'video',
+                            size: stats.size,
+                            duration
+                        });
+                    }
+                }
+            });
+            yield processDirectory(directory);
+            return contents;
+        });
+    }
+    /**
      * Descarga un video y luego genera clips basados en segmentos de tiempo específicos
      * @param videoUrl URL del video a descargar
      * @param timeSegments Segmentos de tiempo [inicio, fin] en segundos
@@ -914,7 +1029,7 @@ class SakugaDownAndClipGen {
                 throw error; // Re-throw the error to be handled by the caller
             }
             // Notificar la actualización de la lista de clips
-            const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
+            const clips = (yield this.getDirectoryContentsWithDuration(this.clipDirectory)).filter(item => item.type === 'video');
             this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
             return resultsMap; // Return the map of results
         });

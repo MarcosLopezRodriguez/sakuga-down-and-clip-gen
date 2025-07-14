@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import http from 'http';
 import { Server, Socket } from 'socket.io';
 import { spawn } from 'child_process';
+import ffprobe from 'ffprobe-static';
 
 // Interface for requests with file uploads
 interface RequestWithFile extends Request {
@@ -43,7 +44,7 @@ export class SakugaDownAndClipGen {
 
         // Define FFMPEG paths locally
         const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
-        const FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
+        const FFPROBE_PATH = process.env.FFPROBE_PATH || ffprobe.path;
 
         this.audioAnalyzer = new AudioAnalyzer(FFMPEG_PATH);
         this.beatSyncedVideosDirectory = beatSyncedVideosDirectory;
@@ -214,10 +215,15 @@ export class SakugaDownAndClipGen {
         res.json(downloads);
     }
 
-    private handleGetClips(req: express.Request, res: express.Response): void {
-        // Only return video files to avoid showing directories or full videos
-        const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
-        res.json(clips);
+    private async handleGetClips(req: express.Request, res: express.Response): Promise<void> {
+        try {
+            const clips = (await this.getDirectoryContentsWithDuration(this.clipDirectory))
+                .filter(item => item.type === 'video');
+            res.json(clips);
+        } catch (error: any) {
+            console.error('Error obteniendo clips:', error);
+            res.status(500).json({ error: error.message });
+        }
     }
 
     private async handlePostDownload(req: express.Request, res: express.Response): Promise<void> {
@@ -297,7 +303,19 @@ export class SakugaDownAndClipGen {
                 sceneOptions
             );
 
-            res.json({ success: true, clipPaths });
+            const clipInfos = await Promise.all(
+                clipPaths.map(async (p) => {
+                    let duration = 0;
+                    try {
+                        duration = await this.getVideoDurationFFprobe(p);
+                    } catch (e) {
+                        console.warn(`No se pudo obtener la duración de ${p}:`, e);
+                    }
+                    return { path: p.replace(/\\/g, '/'), duration };
+                })
+            );
+
+            res.json({ success: true, clipPaths, clipInfos });
         } catch (error: any) {
             res.status(500).json({ error: error.message });
         }
@@ -327,7 +345,7 @@ export class SakugaDownAndClipGen {
             }
 
             // Crear un mock request y response para reutilizar handlePostGenerateClips
-            const results: Array<{ videoPath: string, clipPaths: string[] }> = [];
+            const results: Array<{ videoPath: string, clipPaths: string[], clipInfos: { path: string, duration: number }[] }> = [];
             const processDirectory = async (dirPath: string) => {
                 const entries = fs.readdirSync(dirPath, { withFileTypes: true });
 
@@ -365,7 +383,8 @@ export class SakugaDownAndClipGen {
                         if (responseData && responseData.success) {
                             results.push({
                                 videoPath: fullPath.replace(/\\/g, '/'),
-                                clipPaths: responseData.clipPaths.map((p: string) => p.replace(/\\/g, '/'))
+                                clipPaths: responseData.clipPaths.map((p: string) => p.replace(/\\/g, '/')),
+                                clipInfos: responseData.clipInfos.map((c: any) => ({ path: c.path.replace(/\\/g, '/'), duration: c.duration }))
                             });
                         }
                     }
@@ -375,7 +394,7 @@ export class SakugaDownAndClipGen {
             await processDirectory(videosDirectory);
 
             // Notificar la actualización de la lista de clips
-            const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
+            const clips = (await this.getDirectoryContentsWithDuration(this.clipDirectory)).filter(item => item.type === 'video');
             this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
 
             res.json({ success: true, results });
@@ -634,7 +653,7 @@ export class SakugaDownAndClipGen {
             }
 
             // Actualizar la lista de clips y notificar a los clientes
-            const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
+            const clips = (await this.getDirectoryContentsWithDuration(this.clipDirectory)).filter(item => item.type === 'video');
             this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
 
             res.json({ success: true, message: 'Clip eliminado correctamente' });
@@ -675,7 +694,7 @@ export class SakugaDownAndClipGen {
             fs.rmSync(fullFolderPath, { recursive: true, force: true });
             console.log(`Carpeta de clips eliminada: ${folderPath}`);
 
-            const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
+            const clips = (await this.getDirectoryContentsWithDuration(this.clipDirectory)).filter(item => item.type === 'video');
             this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
 
             res.json({ success: true, message: 'Clips eliminados correctamente' });
@@ -856,6 +875,108 @@ export class SakugaDownAndClipGen {
         };
 
         processDirectory(directory);
+        return contents;
+    }
+
+    /**
+     * Obtiene la duración de un video utilizando FFprobe
+     */
+    private async getVideoDurationFFprobe(videoPath: string): Promise<number> {
+        return new Promise((resolve, reject) => {
+            const ffprobePath = process.env.FFPROBE_PATH || ffprobe.path;
+            const args = [
+                '-v', 'error',
+                '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                videoPath
+            ];
+
+            const ffprobeProcess = spawn(ffprobePath, args);
+            let stdoutData = '';
+            let stderrData = '';
+
+            ffprobeProcess.stdout.on('data', (data) => {
+                stdoutData += data.toString();
+            });
+
+            ffprobeProcess.stderr.on('data', (data) => {
+                stderrData += data.toString();
+            });
+
+            ffprobeProcess.on('close', (code) => {
+                if (code === 0) {
+                    const duration = parseFloat(stdoutData.trim());
+                    if (!isNaN(duration)) {
+                        resolve(duration);
+                    } else {
+                        reject(new Error('Could not parse video duration'));
+                    }
+                } else {
+                    console.error('FFprobe stderr:', stderrData);
+                    reject(new Error(`FFprobe process exited with code ${code}`));
+                }
+            });
+
+            ffprobeProcess.on('error', (err) => {
+                reject(new Error(`Failed to start FFprobe process: ${err.message}`));
+            });
+        });
+    }
+
+    /**
+     * Obtiene el contenido de un directorio e incluye la duración de los videos
+     */
+    private async getDirectoryContentsWithDuration(
+        directory: string,
+        baseFolder: string = ''
+    ): Promise<{ name: string, path: string, type: string, size: number, duration?: number }[]> {
+        const contents: { name: string, path: string, type: string, size: number, duration?: number }[] = [];
+
+        if (!fs.existsSync(directory)) {
+            return contents;
+        }
+
+        const processDirectory = async (dir: string, relativePath: string = '') => {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                let entryRelativePath: string;
+
+                if (baseFolder) {
+                    entryRelativePath = path.join(baseFolder, relativePath, entry.name);
+                } else {
+                    entryRelativePath = relativePath ? path.join(relativePath, entry.name) : entry.name;
+                }
+
+                if (entry.isDirectory()) {
+                    contents.push({
+                        name: entry.name,
+                        path: entryRelativePath,
+                        type: 'directory',
+                        size: 0
+                    });
+                    await processDirectory(fullPath, path.join(relativePath, entry.name));
+                } else if (entry.isFile() && /\.(mp4|webm|mkv)$/i.test(entry.name)) {
+                    const stats = fs.statSync(fullPath);
+                    let duration = 0;
+                    try {
+                        duration = await this.getVideoDurationFFprobe(fullPath);
+                    } catch (e) {
+                        console.warn(`No se pudo obtener la duración de ${fullPath}:`, e);
+                    }
+                    contents.push({
+                        name: entry.name,
+                        path: entryRelativePath,
+                        type: 'video',
+                        size: stats.size,
+                        duration
+                    });
+                }
+            }
+        };
+
+        await processDirectory(directory);
         return contents;
     }
 
@@ -1049,7 +1170,7 @@ export class SakugaDownAndClipGen {
             throw error; // Re-throw the error to be handled by the caller
         }
         // Notificar la actualización de la lista de clips
-        const clips = this.getDirectoryContents(this.clipDirectory).filter(item => item.type === 'video');
+        const clips = (await this.getDirectoryContentsWithDuration(this.clipDirectory)).filter(item => item.type === 'video');
         this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
         return resultsMap; // Return the map of results
     }    /**
