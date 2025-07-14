@@ -805,6 +805,7 @@ async function loadFoldersList() {
 // Load video and clip lists from server
 async function loadVideoLists() {
     try {
+        selectedClipsMap.clear();
         // Load downloaded videos
         const downloadRes = await fetch('/api/downloads');
         const downloads = await downloadRes.json();
@@ -1033,6 +1034,57 @@ let CLIPS_PER_PAGE = parseInt(localStorage.getItem('clipsPerPage')) || 12; // Nu
 // Store pagination state for each video
 let videoPaginationState = new Map();
 
+// Keep track of selected clips for bulk deletion
+let selectedClipsMap = new Map();
+
+function sanitizeId(path) {
+    return path.replace(/[\\/\.]/g, '-');
+}
+
+function updateDeleteSelectedButton(videoName) {
+    const slug = videoName.replace(/[^a-zA-Z0-9]/g, '-');
+    const btn = document.getElementById(`delete-selected-btn-${slug}`);
+    if (!btn) return;
+    const set = selectedClipsMap.get(videoName);
+    const count = set ? set.size : 0;
+    const span = btn.querySelector('.selected-count');
+    if (span) span.textContent = count;
+    btn.style.display = count > 0 ? 'inline-block' : 'none';
+}
+
+function handleClipSelectionChange(videoName, clipPath, isChecked, cardEl) {
+    let set = selectedClipsMap.get(videoName);
+    if (!set) {
+        set = new Set();
+        selectedClipsMap.set(videoName, set);
+    }
+    if (isChecked) {
+        set.add(clipPath);
+        cardEl.classList.add('clip-selected');
+    } else {
+        set.delete(clipPath);
+        cardEl.classList.remove('clip-selected');
+    }
+    if (set.size === 0) {
+        selectedClipsMap.delete(videoName);
+    }
+    updateDeleteSelectedButton(videoName);
+}
+
+async function deleteSelectedClips(videoName) {
+    const set = selectedClipsMap.get(videoName);
+    if (!set || set.size === 0) return;
+    const paths = Array.from(set);
+    await Promise.all(paths.map(p => {
+        const id1 = `clip-container-${sanitizeId(p)}`;
+        const id2 = `clip-container-gen-${sanitizeId(p)}`;
+        const elementId = document.getElementById(id1) ? id1 : (document.getElementById(id2) ? id2 : null);
+        return deleteClip(p, elementId);
+    }));
+    selectedClipsMap.delete(videoName);
+    updateDeleteSelectedButton(videoName);
+}
+
 // Display generated clips in the browser section with pagination
 function displayGeneratedClips(clips) {
     const container = document.getElementById('generatedClips');
@@ -1088,12 +1140,16 @@ function displayGeneratedClips(clips) {
         // Add header for this video's clips with clip count
         const headerRow = document.createElement('div');
         headerRow.className = 'row mb-2 mt-4';
+        const slug = videoName.replace(/[^a-zA-Z0-9]/g, '-');
         headerRow.innerHTML = `
             <div class="col-12 d-flex justify-content-between align-items-center">
                 <div>
                     <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${videoClips.length} clips</span></h5>
                     <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${videoName}" title="Borrar todos los clips">
                         <i class="bi bi-trash"></i>
+                    </button>
+                    <button class="btn btn-sm btn-warning ms-2 delete-selected-btn" id="delete-selected-btn-${slug}" style="display:none;">
+                        <i class="bi bi-trash"></i> Eliminar seleccionados (<span class="selected-count">0</span>)
                     </button>
                 </div>
                 <div class="pagination-info">
@@ -1111,6 +1167,14 @@ function displayGeneratedClips(clips) {
                 if (folder) {
                     deleteClipsFolder(folder, `#${videoSection.id}`);
                 }
+            });
+        }
+
+        const deleteSelectedBtn = headerRow.querySelector('.delete-selected-btn');
+        if (deleteSelectedBtn) {
+            deleteSelectedBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteSelectedClips(videoName);
             });
         }
 
@@ -1147,10 +1211,22 @@ function displayGeneratedClips(clips) {
 function createClipElement(clip, globalIndex) {
     const clipCol = document.createElement('div');
     clipCol.className = 'col-md-3 mb-4';
-    clipCol.id = `clip-container-${clip.path.replace(/[\/\.]/g, '-')}`;
+    clipCol.id = `clip-container-${clip.path.replace(/[\\/\.]/g, '-')}`;
+    clipCol.dataset.clipPath = clip.path;
+    const videoNameForSel = clip.path.split('/')[0];
+    clipCol.dataset.videoName = videoNameForSel;
 
     const clipCard = document.createElement('div');
-    clipCard.className = 'card video-card';
+    clipCard.className = 'card video-card position-relative';
+
+    const selectBox = document.createElement('input');
+    selectBox.type = 'checkbox';
+    selectBox.className = 'form-check-input clip-select-checkbox';
+    clipCard.appendChild(selectBox);
+
+    selectBox.addEventListener('change', () => {
+        handleClipSelectionChange(videoNameForSel, clip.path, selectBox.checked, clipCard);
+    });
 
     // Video preview (thumbnail)
     const videoContainer = document.createElement('div');
@@ -1424,6 +1500,15 @@ async function deleteClip(clipPath, elementId) {
         const pathParts = clipPath.split('/');
         const videoName = pathParts.length > 1 ? pathParts[0] : 'other';
 
+        const set = selectedClipsMap.get(videoName);
+        if (set) {
+            set.delete(clipPath);
+            if (set.size === 0) {
+                selectedClipsMap.delete(videoName);
+            }
+        }
+        updateDeleteSelectedButton(videoName);
+
         // Get current pagination state for this video
         const currentState = videoPaginationState.get(videoName);
 
@@ -1654,11 +1739,15 @@ async function generateClips(videoPath, minDuration, maxDuration, threshold, use
 
             const headerRow = document.createElement('div');
             headerRow.className = 'row mb-2';
+            const slugGen = folderName.replace(/[^a-zA-Z0-9]/g, '-');
             headerRow.innerHTML = `
                 <div class="col-12 d-flex justify-content-between align-items-center">
                     <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${data.clipPaths.length} clips</span></h5>
                     <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${folderName}" title="Borrar todos los clips">
                         <i class="bi bi-trash"></i>
+                    </button>
+                    <button class="btn btn-sm btn-warning ms-2 delete-selected-btn" id="delete-selected-btn-${slugGen}" style="display:none;">
+                        <i class="bi bi-trash"></i> Eliminar seleccionados (<span class="selected-count">0</span>)
                     </button>
                 </div>`;
             group.appendChild(headerRow);
@@ -1671,76 +1760,26 @@ async function generateClips(videoPath, minDuration, maxDuration, threshold, use
                 });
             }
 
+            const deleteSelectedBtn = headerRow.querySelector('.delete-selected-btn');
+            if (deleteSelectedBtn) {
+                deleteSelectedBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteSelectedClips(folderName);
+                });
+            }
+
             const clipsRow = document.createElement('div');
             clipsRow.className = 'row mb-4';
             group.appendChild(clipsRow);
 
             data.clipPaths.forEach(clipPath => {
-                const clipCol = document.createElement('div');
-                clipCol.className = 'col-md-4 mb-3';
-                const clipId = `clip-container-${clipPath.replace(/[\/\.]/g, '-')}`;
-                clipCol.id = clipId;
-
-                const clipCard = document.createElement('div');
-                clipCard.className = 'card video-card';
-
                 const clipName = clipPath.split('/').pop();
                 const clipRelPath = clipPath.replace(/^output\/clips\//, '');
-
-                const videoContainer = document.createElement('div');
-                videoContainer.className = 'video-container';
-
-                // Create video element with controls for direct playback
-                const video = document.createElement('video');
-                video.src = `/clips/${clipRelPath}`;
-                video.controls = true;
-                video.muted = true;
-                video.preload = 'metadata';
-                video.className = 'w-100';
-                video.volume = 0.5; // Set default volume to 50%
-                video.autoplay = true; // Auto-play the video
-                video.loop = true;     // Loop the video playback
-
-                // Add delete button
-                const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'delete-clip-btn';
-                deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
-                deleteBtn.title = 'Eliminar clip';
-                deleteBtn.setAttribute('data-clip-path', clipRelPath);
-
-                // Event for delete button - stop propagation
-                deleteBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    deleteClip(clipRelPath, clipId);
-                });
-
-                videoContainer.appendChild(video);
-                clipCard.appendChild(videoContainer);
-                clipCard.appendChild(deleteBtn); // Add the delete button to the card
-
-                const cardBody = document.createElement('div');
-                cardBody.className = 'card-body';
-
-                const cardTitle = document.createElement('h6');
-                cardTitle.className = 'card-title text-truncate';
-                cardTitle.textContent = clipName;
-
-                cardBody.appendChild(cardTitle);
-                clipCard.appendChild(cardBody);
-                clipCol.appendChild(clipCard);
+                const clipObj = { path: clipRelPath, name: clipName, size: 0 };
+                const clipCol = createClipElement(clipObj, 0);
+                clipCol.classList.remove('col-md-3');
+                clipCol.classList.add('col-md-4');
                 clipsRow.appendChild(clipCol);
-
-                // Add click event to play/pause when clicking the card (not on controls)
-                clipCard.addEventListener('click', (e) => {
-                    // Only handle click if it's not on the delete button or video controls
-                    if (e.target !== deleteBtn && !deleteBtn.contains(e.target) && !video.contains(e.target)) {
-                        if (video.paused) {
-                            video.play();
-                        } else {
-                            video.pause();
-                        }
-                    }
-                });
             });
 
             resultsContainer.appendChild(group);
@@ -1824,11 +1863,15 @@ async function generateClipsFromFolder(folderPath, minDuration, maxDuration, thr
 
                     const headerRow = document.createElement('div');
                     headerRow.className = 'row mb-2';
+                    const slugFolder = folderName.replace(/[^a-zA-Z0-9]/g, '-');
                     headerRow.innerHTML = `
                         <div class="col-12 d-flex justify-content-between align-items-center">
                             <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${result.clipPaths.length} clips</span></h5>
                             <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${folderName}" title="Borrar todos los clips">
                                 <i class="bi bi-trash"></i>
+                            </button>
+                            <button class="btn btn-sm btn-warning ms-2 delete-selected-btn" id="delete-selected-btn-${slugFolder}" style="display:none;">
+                                <i class="bi bi-trash"></i> Eliminar seleccionados (<span class="selected-count">0</span>)
                             </button>
                         </div>`;
                     group.appendChild(headerRow);
@@ -1841,79 +1884,29 @@ async function generateClipsFromFolder(folderPath, minDuration, maxDuration, thr
                         });
                     }
 
+                    const deleteSelectedBtn = headerRow.querySelector('.delete-selected-btn');
+                    if (deleteSelectedBtn) {
+                        deleteSelectedBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            deleteSelectedClips(folderName);
+                        });
+                    }
+
                     // Create a row for the clips
                     const clipsRow = document.createElement('div');
                     clipsRow.className = 'row mb-4';
                     group.appendChild(clipsRow);
                     clipsRow.id = `clips-group-gen-${folderName.replace(/[^a-zA-Z0-9]/g, '-')}`;
 
-                    result.clipPaths.forEach((clipPath, index) => {
-                        const clipCol = document.createElement('div');
-                        clipCol.className = 'col-md-4 mb-3';
-                        const clipId = `clip-container-gen-${clipPath.replace(/[\/\.]/g, '-')}`;
-                        clipCol.id = clipId;
-
-                        const clipCard = document.createElement('div');
-                        clipCard.className = 'card video-card';
-
-                        const clipName = clipPath.split('/').pop();
-                        const clipRelPath = clipPath.replace(/^output\/clips\//, '');
-
-                        const videoContainer = document.createElement('div');
-                        videoContainer.className = 'video-container';
-
-                        // Create video element with controls for direct playback
-                        const video = document.createElement('video');
-                        video.src = `/clips/${clipRelPath}`;
-                        video.controls = true;
-                        video.muted = true;
-                        video.preload = 'metadata';
-                        video.className = 'w-100';
-                        video.volume = 0.5; // Set default volume to 50%
-                        video.autoplay = true; // Auto-play the video
-                        video.loop = true;     // Loop the video playback
-
-                        // Add delete button
-                        const deleteBtn = document.createElement('button');
-                        deleteBtn.className = 'delete-clip-btn';
-                        deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
-                        deleteBtn.title = 'Eliminar clip';
-                        deleteBtn.setAttribute('data-clip-path', clipRelPath);
-
-                        // Event for delete button - stop propagation
-                        deleteBtn.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            deleteClip(clipRelPath, clipId);
+                        result.clipPaths.forEach(clipPath => {
+                            const clipName = clipPath.split('/').pop();
+                            const clipRelPath = clipPath.replace(/^output\/clips\//, '');
+                            const clipObj = { path: clipRelPath, name: clipName, size: 0 };
+                            const clipCol = createClipElement(clipObj, 0);
+                            clipCol.classList.remove('col-md-3');
+                            clipCol.classList.add('col-md-4');
+                            clipsRow.appendChild(clipCol);
                         });
-
-                        videoContainer.appendChild(video);
-                        clipCard.appendChild(videoContainer);
-                        clipCard.appendChild(deleteBtn); // Add the delete button
-
-                        const cardBody = document.createElement('div');
-                        cardBody.className = 'card-body';
-
-                        const cardTitle = document.createElement('h6');
-                        cardTitle.className = 'card-title text-truncate';
-                        cardTitle.textContent = clipName;
-
-                        cardBody.appendChild(cardTitle);
-                        clipCard.appendChild(cardBody);
-                        clipCol.appendChild(clipCard);
-                        clipsRow.appendChild(clipCol);
-
-                        // Add click event to play/pause when clicking the card (not on controls)
-                        clipCard.addEventListener('click', (e) => {
-                            // Only handle click if it's not on the delete button or video controls
-                            if (e.target !== deleteBtn && !deleteBtn.contains(e.target) && !video.contains(e.target)) {
-                                if (video.paused) {
-                                    video.play();
-                                } else {
-                                    video.pause();
-                                }
-                            }
-                        });
-                    });
 
                     resultsContainer.appendChild(group);
                 }

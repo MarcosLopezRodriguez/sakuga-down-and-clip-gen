@@ -383,3 +383,15 @@ footer {
     /* bi-pause-fill */
     opacity: 1;
 }
+
+/* Selection styles */
+.clip-select-checkbox {
+    position: absolute;
+    left: 8px;
+    top: 8px;
+    z-index: 11;
+}
+
+.clip-selected {
+    border: 3px solid #0d6efd;
+}
