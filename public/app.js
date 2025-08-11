@@ -2,6 +2,15 @@ let socket;
 let currentDownloads = new Map();
 let allDownloadedVideos = [];
 let downloadsInProgress = false;
+// Track tags that already completed to avoid stale UI updates
+let completedTags = new Set();
+
+// Helper: stable key for tracking downloads (prefer tag over url)
+function getDownloadKey(data) {
+    if (data && typeof data.tag === 'string' && data.tag.length > 0) return `tag:${data.tag}`;
+    if (data && typeof data.url === 'string' && data.url.length > 0) return `url:${data.url}`;
+    return `misc:${Math.random().toString(36).slice(2)}`; // fallback, should rarely happen
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     // Utilidad: debounce para reducir repintados en inputs de filtro
@@ -126,10 +135,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // Download URL form submission
     document.getElementById('downloadUrlForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const url = document.getElementById('downloadUrl').value.trim();
-        if (!url) return;
-
-        await startDownload({ url });
+        const urlRaw = document.getElementById('downloadUrl').value.trim();
+        if (!urlRaw) return;
+        // Basic URL validation and length limits
+        const MAX_URL_LEN = 2000;
+        if (urlRaw.length > MAX_URL_LEN) {
+            showDownloadError('La URL es demasiado larga.');
+            return;
+        }
+        const urlPattern = /^(https?:\/\/)[^\s]+$/i;
+        if (!urlPattern.test(urlRaw)) {
+            showDownloadError('La URL no es válida. Debe empezar por http(s)://');
+            return;
+        }
+        await startDownload({ url: urlRaw });
     });
 
     // Download tags form submission
@@ -141,11 +160,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const tagsText = downloadTagsInput.value.trim();
         if (!tagsText) return;
 
+        const MAX_TAGS = 50;
+        const MAX_TAG_LEN = 64;
+        const TAG_RE = /^[A-Za-z0-9_:\-]+$/;
         const tags = tagsText.split(';')
             .map(tag => tag.trim())
-            .filter(tag => tag.length > 0);
-        localStorage.setItem('lastTags', tagsText);
-
+            .filter(tag => tag.length > 0)
+            .slice(0, MAX_TAGS)
+            .filter(tag => tag.length <= MAX_TAG_LEN && TAG_RE.test(tag));
+        if (tags.length === 0) {
+            showDownloadError('No hay etiquetas válidas. Usa letras, números, _ - : separadas por ;');
+            return;
+        }
+        localStorage.setItem('lastTags', tags.join(';'));
         await startDownload({ tags });
     });
 
@@ -240,6 +267,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // ----- Socket.IO Event Handlers -----
     socket.on('connect', () => {
         console.log('Conectado al servidor WebSocket');
+        showToast('Conectado al servidor', 'success');
+    });
+    socket.on('disconnect', (reason) => {
+        console.warn('Desconectado del servidor WebSocket:', reason);
+        showToast('Conexión perdida. Reintentando...', 'warning');
+    });
+    socket.on('reconnect_attempt', (attempt) => {
+        console.log('Intentando reconectar...', attempt);
+    });
+    socket.on('reconnect', (attempt) => {
+        console.log('Reconectado tras intentos:', attempt);
+        showToast('Reconectado al servidor', 'success');
+    });
+    socket.on('connect_error', (err) => {
+        console.error('Error de conexión WebSocket:', err);
+        showToast('Error de conexión con el servidor', 'danger');
     });
 
     // Eventos de descarga
@@ -250,13 +293,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
         downloadsInProgress = true;
 
+        // If restarting a tag, ensure it's not marked as completed
+        if (data && typeof data.tag === 'string') {
+            completedTags.delete(data.tag);
+        }
+
         // Almacenar información de la descarga
-        if (!currentDownloads.has(data.url)) {
-            currentDownloads.set(data.url, {
+        const key = getDownloadKey(data);
+        if (!currentDownloads.has(key)) {
+            currentDownloads.set(key, {
                 url: data.url,
                 tag: data.tag,
                 status: data.status,
-                message: data.message
+                message: data.message,
+                progress: data.progress
             });
         }
 
@@ -266,17 +316,27 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('downloadProgress', (data) => {
         console.log('Progreso de descarga:', data);
 
+        // Ignore stale progress for completed tags
+        if (data && typeof data.tag === 'string' && completedTags.has(data.tag)) {
+            return;
+        }
+        // If there are no active downloads tracked anymore, ignore stray progress
+        if (currentDownloads.size === 0) {
+            return;
+        }
+
         // Actualizar información de la descarga
-        if (currentDownloads.has(data.url)) {
-            const download = currentDownloads.get(data.url);
+        const key = getDownloadKey(data);
+        if (currentDownloads.has(key)) {
+            const download = currentDownloads.get(key);
             download.status = data.status;
             download.message = data.message;
             if (data.progress) {
                 download.progress = data.progress;
             }
-            currentDownloads.set(data.url, download);
+            currentDownloads.set(key, download);
         } else {
-            currentDownloads.set(data.url, {
+            currentDownloads.set(key, {
                 url: data.url,
                 tag: data.tag,
                 status: data.status,
@@ -298,9 +358,10 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast(`Descarga completada: ${data.fileName || data.url}`, 'success');
 
         // Remover de las descargas activas
-        if (currentDownloads.has(data.url)) {
-            currentDownloads.delete(data.url);
-        }
+        const key = getDownloadKey(data);
+        if (currentDownloads.has(key)) currentDownloads.delete(key);
+        // Also try by raw url key if tracking differed earlier
+        if (currentDownloads.has(`url:${data.url}`)) currentDownloads.delete(`url:${data.url}`);
 
         // Añadir a la lista de resultados de descarga
         addDownloadResult(data);
@@ -322,11 +383,12 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast(`Error: ${data.message}`, 'danger');
 
         // Actualizar estado de la descarga
-        if (data.url && currentDownloads.has(data.url)) {
-            const download = currentDownloads.get(data.url);
+        const key = getDownloadKey(data);
+        if (currentDownloads.has(key)) {
+            const download = currentDownloads.get(key);
             download.status = 'error';
             download.message = data.message;
-            currentDownloads.set(data.url, download);
+            currentDownloads.set(key, download);
         }
 
         updateDownloadList();
@@ -350,6 +412,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.on('postsFound', (data) => {
         console.log('Posts encontrados:', data);
+        if (data && typeof data.tag === 'string' && completedTags.has(data.tag)) {
+            return;
+        }
+        // If there are no active downloads, ignore stale status updates
+        if (currentDownloads.size === 0) {
+            return;
+        }
         showDownloadStatus(`${data.message}`);
     });
 
@@ -361,8 +430,49 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.on('tagProcessingComplete', (data) => {
         console.log('Procesamiento de etiqueta completado:', data);
+        // Update status and toast
         showDownloadStatus(`${data.message}`);
         showToast(data.message, 'success');
+
+        // Mark tag as completed to suppress further progress events
+        if (data && typeof data.tag === 'string') {
+            completedTags.add(data.tag);
+        }
+
+        // Remove any active download entries matching this tag
+        try {
+            if (data && typeof data.tag === 'string') {
+                for (const [key, dl] of currentDownloads.entries()) {
+                    const url = dl && typeof dl.url === 'string' ? dl.url : '';
+                    const matchesTag = dl && dl.tag === data.tag;
+                    const urlContainsTag = url && (url.includes(data.tag) || url.includes(encodeURIComponent(data.tag)));
+                    const isSearching = dl && dl.status === 'searching';
+                    if (matchesTag || (isSearching && urlContainsTag)) {
+                        currentDownloads.delete(key);
+                    }
+                }
+            }
+            // Aggressively remove any generic 'Procesando página ...' leftovers
+            for (const [key, dl] of currentDownloads.entries()) {
+                const msg = dl && typeof dl.message === 'string' ? dl.message : '';
+                const isSearching = dl && dl.status === 'searching';
+                if (isSearching || /^Procesando página\s+\d+\.\.\./.test(msg)) {
+                    currentDownloads.delete(key);
+                }
+            }
+        } catch (_) { /* noop */ }
+
+        // Hide progress bar and update list
+        const progress = document.querySelector('#download .progress');
+        if (progress) progress.style.display = 'none';
+
+        // Reset flag if no more active downloads
+        if (currentDownloads.size === 0) {
+            downloadsInProgress = false;
+            const statusEl = document.getElementById('downloadStatus');
+            if (statusEl) statusEl.textContent = 'Descargas finalizadas';
+        }
+        updateDownloadList();
     });
 
     // --- Rename Clips Tab Functionality ---
@@ -960,7 +1070,10 @@ function showDownloadError(message) {
     const errorDiv = document.createElement('div');
     errorDiv.className = 'alert alert-danger';
     errorDiv.setAttribute('role', 'alert');
-    errorDiv.innerHTML = `<i class="bi bi-exclamation-triangle"></i> ${message}`;
+    const errIcon = document.createElement('i');
+    errIcon.className = 'bi bi-exclamation-triangle';
+    errorDiv.appendChild(errIcon);
+    errorDiv.appendChild(document.createTextNode(' ' + (message || 'Error')));
 
     // Insertar al principio
     resultsContainer.insertBefore(errorDiv, resultsContainer.firstChild);
@@ -984,11 +1097,22 @@ function addDownloadResult(data) {
     item.className = 'list-group-item list-group-item-success d-flex justify-content-between align-items-center';
 
     const fileName = data.fileName || data.filePath.split('/').pop();
-    item.innerHTML = `<span><i class="bi bi-check-circle me-2"></i>${fileName}</span>`;
+    // Build icon + filename safely
+    const span = document.createElement('span');
+    const icon = document.createElement('i');
+    icon.className = 'bi bi-check-circle me-2';
+    const nameText = document.createTextNode(fileName || '');
+    span.appendChild(icon);
+    span.appendChild(nameText);
+    item.appendChild(span);
 
     const playBtn = document.createElement('button');
     playBtn.className = 'btn btn-sm btn-primary';
-    playBtn.innerHTML = '<i class="bi bi-play-fill"></i> Reproducir';
+    // Button contents with icon created safely
+    const playIcon = document.createElement('i');
+    playIcon.className = 'bi bi-play-fill';
+    playBtn.appendChild(playIcon);
+    playBtn.appendChild(document.createTextNode(' Reproducir'));
     playBtn.setAttribute('aria-label', `Reproducir ${fileName}`);
     playBtn.addEventListener('click', () => {
         openVideoPlayer(`/downloads/${data.filePath}`, fileName);
