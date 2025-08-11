@@ -148,7 +148,14 @@ document.addEventListener('DOMContentLoaded', () => {
             showDownloadError('La URL no es válida. Debe empezar por http(s)://');
             return;
         }
-        await startDownload({ url: urlRaw });
+        // Disable submit button during process
+        const submitBtn = e.submitter || document.querySelector('#downloadUrlForm button[type="submit"]');
+        if (submitBtn) submitBtn.setAttribute('disabled', 'true');
+        try {
+            await startDownload({ url: urlRaw });
+        } finally {
+            if (submitBtn) submitBtn.removeAttribute('disabled');
+        }
     });
 
     // Download tags form submission
@@ -173,7 +180,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         localStorage.setItem('lastTags', tags.join(';'));
-        await startDownload({ tags });
+        // Disable submit button during process
+        const submitBtn = e.submitter || document.querySelector('#downloadTagsForm button[type="submit"]');
+        if (submitBtn) submitBtn.setAttribute('disabled', 'true');
+        try {
+            await startDownload({ tags });
+        } finally {
+            if (submitBtn) submitBtn.removeAttribute('disabled');
+        }
     });
 
     // Generate clips form submission
