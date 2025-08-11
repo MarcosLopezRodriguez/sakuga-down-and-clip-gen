@@ -4,6 +4,15 @@ let allDownloadedVideos = [];
 let downloadsInProgress = false;
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Utilidad: debounce para reducir repintados en inputs de filtro
+    function debounce(fn, wait = 250) {
+        let t;
+        return (...args) => {
+            clearTimeout(t);
+            t = setTimeout(() => fn.apply(null, args), wait);
+        };
+    }
+
     // Conexión de Socket.IO
     socket = io();
 
@@ -356,23 +365,35 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!folderListContainer) return;
         folderListContainer.innerHTML = ''; // Clear previous list
 
-        if (foldersToShow.length === 0) {
+        if (!Array.isArray(foldersToShow) || foldersToShow.length === 0) {
             folderListContainer.innerHTML = '<p class="text-muted">No se encontraron carpetas de clips.</p>';
             return;
         }
 
+        const fragment = document.createDocumentFragment();
         const listGroup = document.createElement('div');
         listGroup.className = 'list-group';
+
         foldersToShow.forEach(folder => {
-            const listItem = document.createElement('label');
-            listItem.className = 'list-group-item d-flex align-items-center';
-            listItem.innerHTML = `
-                <input class="form-check-input me-2" type="checkbox" value="${folder}" id="folder-${folder}">
-                ${folder}
-            `;
-            listGroup.appendChild(listItem);
+            const label = document.createElement('label');
+            label.className = 'list-group-item d-flex align-items-center';
+
+            const checkbox = document.createElement('input');
+            checkbox.className = 'form-check-input me-2';
+            checkbox.type = 'checkbox';
+            checkbox.value = folder;
+            checkbox.id = `folder-${folder.replace(/\s+/g, '-')}`;
+
+            const text = document.createElement('span');
+            text.textContent = folder;
+
+            label.appendChild(checkbox);
+            label.appendChild(text);
+            listGroup.appendChild(label);
         });
-        folderListContainer.appendChild(listGroup);
+
+        fragment.appendChild(listGroup);
+        folderListContainer.appendChild(fragment);
     }
 
     async function fetchAndDisplayClipFolders() {
@@ -403,11 +424,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const deselectAllFoldersBtn = document.getElementById('deselectAllFoldersBtn');
 
             if (folderFilterInput) {
-                folderFilterInput.addEventListener('input', (e) => {
+                const debouncedFilter = debounce((e) => {
                     const filterText = e.target.value.toLowerCase();
                     const filteredFolders = allClipFolders.filter(folder => folder.toLowerCase().includes(filterText));
                     renderClipFolderList(filteredFolders);
-                });
+                }, 250);
+                folderFilterInput.addEventListener('input', debouncedFilter);
             }
 
             if (selectAllFoldersBtn) {
@@ -457,7 +479,6 @@ document.addEventListener('DOMContentLoaded', () => {
             renameFeedback.classList.add('alert', 'alert-warning');
             return;
         }
-
         if (!outputSubfolderName) {
             renameFeedback.textContent = 'Please enter a name for the output subfolder.';
             renameFeedback.classList.add('alert', 'alert-warning');
@@ -521,24 +542,36 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!beatSyncFolderListContainer) return;
         beatSyncFolderListContainer.innerHTML = ''; // Clear previous list
 
-        if (foldersToShow.length === 0) {
+        if (!Array.isArray(foldersToShow) || foldersToShow.length === 0) {
             beatSyncFolderListContainer.innerHTML = '<p class="text-muted">No folders match your filter or no clip folders found.</p>';
             return;
         }
 
+        const fragment = document.createDocumentFragment();
         const listGroup = document.createElement('div');
         listGroup.className = 'list-group';
+
         foldersToShow.forEach(folder => {
-            const listItem = document.createElement('label');
-            listItem.className = 'list-group-item d-flex align-items-center';
-            // Ensure unique IDs for checkboxes if this function is reused or if folder names can clash
-            listItem.innerHTML = `
-                <input class="form-check-input me-2" type="checkbox" value="${folder}" id="beatSyncFolderCheckbox-${folder.replace(/\s+/g, '-')}">
-                ${folder}
-            `;
-            listGroup.appendChild(listItem);
+            const label = document.createElement('label');
+            label.className = 'list-group-item d-flex align-items-center';
+
+            const checkboxId = `beatSyncFolderCheckbox-${folder.replace(/\s+/g, '-')}`;
+            const checkbox = document.createElement('input');
+            checkbox.className = 'form-check-input me-2';
+            checkbox.type = 'checkbox';
+            checkbox.value = folder;
+            checkbox.id = checkboxId;
+
+            const text = document.createElement('span');
+            text.textContent = folder;
+
+            label.appendChild(checkbox);
+            label.appendChild(text);
+            listGroup.appendChild(label);
         });
-        beatSyncFolderListContainer.appendChild(listGroup);
+
+        fragment.appendChild(listGroup);
+        beatSyncFolderListContainer.appendChild(fragment);
     }
 
     async function fetchAndDisplayBeatSyncClipFolders() {
@@ -567,11 +600,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (beatSyncFolderFilterInput) {
-        beatSyncFolderFilterInput.addEventListener('input', (e) => {
+        beatSyncFolderFilterInput.addEventListener('input', debounce((e) => {
             const filterText = e.target.value.toLowerCase();
             const filteredFolders = allBeatSyncClipFolders.filter(folder => folder.toLowerCase().includes(filterText));
             renderBeatSyncClipFolderList(filteredFolders);
-        });
+        }, 250));
     }
 
     if (beatSyncSelectAllFoldersBtn) {
