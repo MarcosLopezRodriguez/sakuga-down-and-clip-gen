@@ -25,9 +25,12 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             const targetSectionId = link.dataset.section;
 
-            // Hide all sections and remove active class from nav links
+            // Hide all sections and remove active state/aria-current from nav links
             sections.forEach(section => section.classList.remove('active'));
-            navLinks.forEach(navLink => navLink.classList.remove('active'));
+            navLinks.forEach(navLink => {
+                navLink.classList.remove('active');
+                navLink.removeAttribute('aria-current');
+            });
 
             // Show target section and set active class on clicked link
             const targetSectionElement = document.getElementById(targetSectionId);
@@ -35,6 +38,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 targetSectionElement.classList.add('active');
             }
             link.classList.add('active');
+            link.setAttribute('aria-current', 'page');
+            // Keep focus on the active nav item for accessibility
+            try { link.focus({ preventScroll: true }); } catch (_) { link.focus(); }
 
             // If the rename-clips tab is activated, fetch its folders
             if (targetSectionId === 'rename-clips') {
@@ -953,6 +959,7 @@ function showDownloadError(message) {
     const resultsContainer = document.getElementById('downloadResults');
     const errorDiv = document.createElement('div');
     errorDiv.className = 'alert alert-danger';
+    errorDiv.setAttribute('role', 'alert');
     errorDiv.innerHTML = `<i class="bi bi-exclamation-triangle"></i> ${message}`;
 
     // Insertar al principio
@@ -982,6 +989,7 @@ function addDownloadResult(data) {
     const playBtn = document.createElement('button');
     playBtn.className = 'btn btn-sm btn-primary';
     playBtn.innerHTML = '<i class="bi bi-play-fill"></i> Reproducir';
+    playBtn.setAttribute('aria-label', `Reproducir ${fileName}`);
     playBtn.addEventListener('click', () => {
         openVideoPlayer(`/downloads/${data.filePath}`, fileName);
     });
@@ -1023,6 +1031,7 @@ function updateDownloadList() {
         const cancelBtn = document.createElement('button');
         cancelBtn.className = 'btn btn-sm btn-danger';
         cancelBtn.textContent = 'Cancelar';
+        cancelBtn.setAttribute('aria-label', `Cancelar descarga ${d.url || ''}`.trim());
         if (d.cancelRequested) cancelBtn.disabled = true;
         cancelBtn.addEventListener('click', () => {
             cancelBtn.disabled = true;
@@ -1094,6 +1103,7 @@ function displayDownloadedVideos(videos) {
                 const playBtn = document.createElement('button');
                 playBtn.className = 'btn btn-sm btn-primary';
                 playBtn.innerHTML = '<i class="bi bi-play-fill"></i>';
+                playBtn.setAttribute('aria-label', `Reproducir ${video.name}`);
                 playBtn.addEventListener('click', () => {
                     openVideoPlayer(`/downloads/${video.path}`, video.name);
                 });
@@ -1101,6 +1111,7 @@ function displayDownloadedVideos(videos) {
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'btn btn-sm btn-danger ms-2';
                 deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+                deleteBtn.setAttribute('aria-label', `Eliminar ${video.name}`);
                 deleteBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     deleteVideo(video.path);
@@ -1137,6 +1148,7 @@ function displayDownloadedVideos(videos) {
                 deleteBtn.className = 'delete-video-btn';
                 deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
                 deleteBtn.title = 'Eliminar video';
+                deleteBtn.setAttribute('aria-label', `Eliminar ${video.name}`);
                 deleteBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     deleteVideo(video.path);

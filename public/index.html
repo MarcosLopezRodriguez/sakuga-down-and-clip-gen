@@ -14,6 +14,19 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.7.0/dist/nouislider.min.css" crossorigin="anonymous">
 
+    <style>
+      /* Respeta reduce motion: elimina animaciones/stripes en barras de progreso */
+      @media (prefers-reduced-motion: reduce) {
+        .progress-bar-animated {
+          -webkit-animation: none !important;
+          animation: none !important;
+        }
+        .progress-bar.progress-bar-striped {
+          background-image: none !important;
+        }
+      }
+    </style>
+
     <script>
       // Inicializar tema antes de renderizar para evitar flash
       (function() {
@@ -34,13 +47,13 @@
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark" role="navigation" aria-label="Principal">
         <div class="container">
             <a class="navbar-brand" href="#">SakugaVideos</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link active" href="#" data-section="download">Descargar</a>
+                        <a class="nav-link active" aria-current="page" href="#" data-section="download">Descargar</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="#" data-section="generate">Generar clips</a>
@@ -63,7 +76,8 @@
         </div>
     </nav>
 
-    <div class="container main-content mt-4">
+    <main class="container main-content mt-4" role="main">
+        <h1 class="visually-hidden">SakugaVideos - Downloader & Clip Generator</h1>
         <!-- Sección de descarga -->
         <section id="download" class="section-content active">
             <div class="card">
@@ -84,10 +98,9 @@
                             <form id="downloadUrlForm" class="needs-validation">
                                 <div class="mb-3">
                                     <label for="downloadUrl" class="form-label">URL de Sakugabooru:</label>
-                                    <input type="url" class="form-control" id="downloadUrl"
+                                    <input type="url" class="form-control" id="downloadUrl" aria-describedby="downloadUrlHelp"
                                         placeholder="https://www.sakugabooru.com/post?tags=one_piece" required>
-                                    <div class="form-text">Ingresa una URL de búsqueda por etiquetas o un post
-                                        específico</div>
+                                    <div id="downloadUrlHelp" class="form-text">Ingresa una URL de búsqueda por etiquetas o un post específico</div>
                                 </div>
                                 <button type="submit" class="btn btn-primary">
                                     <i class="bi bi-cloud-download"></i> Descargar
@@ -98,9 +111,9 @@
                             <form id="downloadTagsForm" class="needs-validation">
                                 <div class="mb-3">
                                     <label for="downloadTags" class="form-label">Etiquetas:</label>
-                                    <textarea class="form-control" id="downloadTags" rows="3"
+                                    <textarea class="form-control" id="downloadTags" rows="3" aria-describedby="downloadTagsHelp"
                                         placeholder="one_piece;dragon_ball;mob_psycho_100" required></textarea>
-                                    <div class="form-text">Ingresa etiquetas separadas por punto y coma (;)</div>
+                                    <div id="downloadTagsHelp" class="form-text">Ingresa etiquetas separadas por punto y coma (;)</div>
                                 </div>
                                 <button type="submit" class="btn btn-primary">
                                     <i class="bi bi-cloud-download"></i> Descargar
@@ -116,10 +129,10 @@
                     <h3>Proceso de descarga</h3>
                 </div>
                 <div class="card-body">
-                    <div id="downloadStatus" class="mb-3">No hay descargas activas</div>
+                    <div id="downloadStatus" class="mb-3" role="status" aria-live="assertive">No hay descargas activas</div>
                     <div class="progress mb-3" style="display: none;">
                         <div id="downloadProgress" class="progress-bar progress-bar-striped progress-bar-animated"
-                            role="progressbar" style="width: 0%"></div>
+                            role="progressbar" style="width: 0%" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
                     </div>
                     <div id="currentDownloadsList" class="list-group mb-3"></div>
                     <div id="downloadResults" class="list-group"></div>
@@ -137,26 +150,26 @@
                     <form id="generateClipsForm" class="needs-validation">
                         <div class="mb-3">
                             <label for="folderSelect" class="form-label">Selecciona carpeta:</label>
-                            <select class="form-select" id="folderSelect" required>
+                            <select class="form-select" id="folderSelect" required aria-describedby="folderSelectHelp">
                                 <option value="" selected>Todos los videos</option>
                                 <!-- Las carpetas se cargarán dinámicamente -->
                             </select>
-                            <div class="form-text">Se procesarán todos los videos de la carpeta seleccionada</div>
+                            <div id="folderSelectHelp" class="form-text">Se procesarán todos los videos de la carpeta seleccionada</div>
                         </div>
                         <div class="row">
                             <div class="col-md-4 mb-3">
                                 <label for="minDuration" class="form-label">Duración mínima (segundos):</label>
-                                <input type="number" class="form-control" id="minDuration" value="1.0" min="0.1"
+                                <input type="number" class="form-control" id="minDuration" value="1.0" min="0.1" inputmode="decimal" pattern="^[0-9]+(\.[0-9]+)?$"
                                     step="0.1">
                             </div>
                             <div class="col-md-4 mb-3">
                                 <label for="maxDuration" class="form-label">Duración máxima (segundos):</label>
-                                <input type="number" class="form-control" id="maxDuration" value="3.0" min="0.5"
+                                <input type="number" class="form-control" id="maxDuration" value="3.0" min="0.5" inputmode="decimal" pattern="^[0-9]+(\.[0-9]+)?$"
                                     step="0.1">
                             </div>
                             <div class="col-md-4 mb-3">
                                 <label for="threshold" class="form-label">Threshold:</label>
-                                <input type="number" class="form-control" id="threshold" value="30">
+                                <input type="number" class="form-control" id="threshold" value="30" inputmode="numeric" pattern="^[0-9]+$" step="1">
                             </div>
                         </div>
                         <button type="submit" class="btn btn-primary">
@@ -174,10 +187,10 @@
                     <h3>Clips generados</h3>
                 </div>
                 <div class="card-body">
-                    <div id="generationStatus" class="mb-3">No hay procesamiento activo</div>
+                    <div id="generationStatus" class="mb-3" role="status" aria-live="polite">No hay procesamiento activo</div>
                     <div class="progress mb-3" style="display: none;">
                         <div id="generationProgress" class="progress-bar progress-bar-striped progress-bar-animated"
-                            role="progressbar" style="width: 0%"></div>
+                            role="progressbar" style="width: 0%" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
                     </div>
                     <div id="clipResults" class="row"></div>
                 </div>
@@ -369,12 +382,12 @@
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
-                        <video id="videoPlayer" class="w-100" controls></video>
+                        <video id="videoPlayer" class="w-100" controls aria-label="Reproductor de video"></video>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
+    </main>
 
     <footer class="bg-dark text-light py-4 mt-5">
         <div class="container text-center">
