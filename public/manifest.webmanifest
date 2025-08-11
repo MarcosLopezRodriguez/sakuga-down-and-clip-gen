@@ -1,0 +1,17 @@
+{
+  "name": "SakugaVideos - Downloader & Clip Generator",
+  "short_name": "SakugaVideos",
+  "description": "Descarga videos de Sakugabooru, genera clips y sincroniza con beats.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#0d6efd",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
