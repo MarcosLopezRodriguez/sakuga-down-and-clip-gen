@@ -1,11 +1,11 @@
+let socket;
+let currentDownloads = new Map();
+let allDownloadedVideos = [];
+let downloadsInProgress = false;
+
 document.addEventListener('DOMContentLoaded', () => {
     // Conexión de Socket.IO
-    const socket = io();
-
-    // Variables globales
-    let currentDownloads = new Map();
-    let allDownloadedVideos = [];
-    let downloadsInProgress = false;
+    socket = io();
 
     // Tab navigation
     const navLinks = document.querySelectorAll('.navbar-nav .nav-link');
@@ -33,8 +33,15 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (targetSectionId === 'beat-sync') {
                 fetchAndDisplayBeatSyncClipFolders(); // Function to be added later
             }
+            localStorage.setItem('activeSection', targetSectionId);
         });
     });
+
+    const savedSection = localStorage.getItem('activeSection');
+    if (savedSection) {
+        const savedLink = document.querySelector(`.navbar-nav .nav-link[data-section="${savedSection}"]`);
+        if (savedLink) savedLink.click();
+    }
 
     // Specific elements for the "Rename Clips" tab
     const folderLoadingIndicator = document.getElementById('folder-loading-indicator');
@@ -59,14 +66,47 @@ document.addEventListener('DOMContentLoaded', () => {
     let allBeatSyncClipFolders = []; // Variable to store all clip folders for beat-sync tab
     let analyzedAudioFileName = '';
 
+    const downloadUrlInput = document.getElementById('downloadUrl');
+    if (downloadUrlInput) {
+        downloadUrlInput.addEventListener('dragover', (e) => e.preventDefault());
+        downloadUrlInput.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const text = e.dataTransfer.getData('text');
+            if (text) {
+                downloadUrlInput.value = text.trim();
+            }
+        });
+    }
+
+    if (audioFileUploadInput) {
+        ['dragover', 'dragenter'].forEach(evt => {
+            audioFileUploadInput.addEventListener(evt, (e) => e.preventDefault());
+        });
+        audioFileUploadInput.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('audio/'));
+            if (files.length > 0) {
+                const dt = new DataTransfer();
+                files.forEach(file => dt.items.add(file));
+                audioFileUploadInput.files = dt.files;
+                audioFileUploadInput.dispatchEvent(new Event('change'));
+            }
+        });
+    }
+
     // Initialize video lists
     loadVideoLists();
     loadFoldersList();
 
     // Folder selection change event
-    document.getElementById('folderSelect').addEventListener('change', (e) => {
-        // Ya no necesitamos actualizar el selector de videos
+    const folderSelectEl = document.getElementById('folderSelect');
+    folderSelectEl.addEventListener('change', (e) => {
+        localStorage.setItem('selectedFolder', e.target.value);
     });
+    const savedFolder = localStorage.getItem('selectedFolder');
+    if (savedFolder) {
+        folderSelectEl.value = savedFolder;
+    }
 
     // Download URL form submission
     document.getElementById('downloadUrlForm').addEventListener('submit', async (e) => {
@@ -78,14 +118,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Download tags form submission
+    const downloadTagsInput = document.getElementById('downloadTags');
+    const savedTags = localStorage.getItem('lastTags');
+    if (savedTags) downloadTagsInput.value = savedTags;
     document.getElementById('downloadTagsForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const tagsText = document.getElementById('downloadTags').value.trim();
+        const tagsText = downloadTagsInput.value.trim();
         if (!tagsText) return;
 
         const tags = tagsText.split(';')
             .map(tag => tag.trim())
             .filter(tag => tag.length > 0);
+        localStorage.setItem('lastTags', tagsText);
 
         await startDownload({ tags });
     });
@@ -124,7 +168,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Clips per page selector
-    document.getElementById('clipsPerPageSelect').addEventListener('change', (e) => {
+    const clipsPerPageSelect = document.getElementById('clipsPerPageSelect');
+    clipsPerPageSelect.value = CLIPS_PER_PAGE;
+    clipsPerPageSelect.addEventListener('change', (e) => {
         CLIPS_PER_PAGE = parseInt(e.target.value);
         localStorage.setItem('clipsPerPage', CLIPS_PER_PAGE);
 
@@ -171,6 +217,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Setup video modal
     setupVideoPlayer();
 
+    const shortcutTooltipEl = document.getElementById('paginationShortcuts');
+    if (shortcutTooltipEl) {
+        new bootstrap.Tooltip(shortcutTooltipEl);
+    }
+
     // ----- Socket.IO Event Handlers -----
     socket.on('connect', () => {
         console.log('Conectado al servidor WebSocket');
@@ -180,6 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('downloadStarted', (data) => {
         console.log('Descarga iniciada:', data);
         showDownloadStatus(`${data.message}`);
+        showToast(data.message, 'info');
 
         downloadsInProgress = true;
 
@@ -228,6 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.on('downloadComplete', (data) => {
         console.log('Descarga completada:', data);
+        showToast(`Descarga completada: ${data.fileName || data.url}`, 'success');
 
         // Remover de las descargas activas
         if (currentDownloads.has(data.url)) {
@@ -251,6 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('downloadError', (data) => {
         console.error('Error de descarga:', data);
         showDownloadError(data.message);
+        showToast(`Error: ${data.message}`, 'danger');
 
         // Actualizar estado de la descarga
         if (data.url && currentDownloads.has(data.url)) {
@@ -287,11 +341,13 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('tagProcessingStarted', (data) => {
         console.log('Procesamiento de etiqueta iniciado:', data);
         showDownloadStatus(`${data.message}`);
+        showToast(data.message, 'info');
     });
 
     socket.on('tagProcessingComplete', (data) => {
         console.log('Procesamiento de etiqueta completado:', data);
         showDownloadStatus(`${data.message}`);
+        showToast(data.message, 'success');
     });
 
     // --- Rename Clips Tab Functionality ---
@@ -301,7 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
         folderListContainer.innerHTML = ''; // Clear previous list
 
         if (foldersToShow.length === 0) {
-            folderListContainer.innerHTML = '<p class="text-muted">No folders match your filter or no folders found.</p>';
+            folderListContainer.innerHTML = '<p class="text-muted">No se encontraron carpetas de clips.</p>';
             return;
         }
 
@@ -780,7 +836,6 @@ async function loadFoldersList() {
         const folderSelect = document.getElementById('folderSelect');
 
         // Mantener la opción "Todos los videos"
-        const currentSelection = folderSelect.value;
         folderSelect.innerHTML = '<option value="" selected>Todos los videos</option>';
 
         // Añadir las carpetas disponibles
@@ -793,11 +848,11 @@ async function loadFoldersList() {
             });
         }
 
-        // Restaurar la selección anterior si es posible
-        if (currentSelection) {
-            const exists = Array.from(folderSelect.options).some(opt => opt.value === currentSelection);
+        const storedSelection = localStorage.getItem('selectedFolder');
+        if (storedSelection) {
+            const exists = Array.from(folderSelect.options).some(opt => opt.value === storedSelection);
             if (exists) {
-                folderSelect.value = currentSelection;
+                folderSelect.value = storedSelection;
             }
         }
     } catch (error) {
@@ -822,6 +877,26 @@ async function loadVideoLists() {
     } catch (error) {
         console.error('Error loading video lists:', error);
     }
+}
+
+// Mostrar toast de estado
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+    const toastEl = document.createElement('div');
+    toastEl.className = `toast align-items-center text-bg-${type} border-0`;
+    toastEl.setAttribute('role', 'alert');
+    toastEl.setAttribute('aria-live', 'assertive');
+    toastEl.setAttribute('aria-atomic', 'true');
+    toastEl.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">${message}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>`;
+    container.appendChild(toastEl);
+    const toast = new bootstrap.Toast(toastEl, { delay: 5000 });
+    toast.show();
+    toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
 }
 
 // Mostrar el estado de la descarga
@@ -887,7 +962,10 @@ function addDownloadResult(data) {
 // Actualizar la lista de descargas activas
 function updateDownloadList() {
     const downloadStatus = document.getElementById('downloadStatus');
+    const listContainer = document.getElementById('currentDownloadsList');
     const activeDownloads = Array.from(currentDownloads.values());
+
+    listContainer.innerHTML = '';
 
     if (activeDownloads.length === 0) {
         if (downloadsInProgress) {
@@ -896,10 +974,33 @@ function updateDownloadList() {
         } else {
             downloadStatus.textContent = 'No hay descargas activas';
         }
+        document.querySelectorAll('#downloadUrlForm button, #downloadTagsForm button').forEach(btn => btn.disabled = false);
         return;
     }
 
-    // Mostrar el estado de la primera descarga activa
+    document.querySelectorAll('#downloadUrlForm button, #downloadTagsForm button').forEach(btn => btn.disabled = true);
+
+    activeDownloads.forEach(d => {
+        const item = document.createElement('div');
+        item.className = 'list-group-item d-flex justify-content-between align-items-center';
+        const span = document.createElement('span');
+        span.textContent = d.message || d.url;
+        item.appendChild(span);
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn btn-sm btn-danger';
+        cancelBtn.textContent = 'Cancelar';
+        if (d.cancelRequested) cancelBtn.disabled = true;
+        cancelBtn.addEventListener('click', () => {
+            cancelBtn.disabled = true;
+            d.cancelRequested = true;
+            socket.emit('cancelDownload', { url: d.url });
+        });
+        item.appendChild(cancelBtn);
+
+        listContainer.appendChild(item);
+    });
+
     const firstActive = activeDownloads.find(d => d.status !== 'complete');
     if (firstActive) {
         downloadStatus.textContent = firstActive.message;
