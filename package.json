@@ -12,7 +12,10 @@
     "dev": "ts-node src/index.ts",
     "download": "ts-node src/index.ts download",
     "generate": "ts-node src/index.ts generate-clips",
-    "download-and-clip": "ts-node src/index.ts download-and-clip"
+    "download-and-clip": "ts-node src/index.ts download-and-clip",
+    "web:build": "esbuild src/frontend/main.ts --bundle --sourcemap --outfile=public/app.mod.js",
+    "web:watch": "esbuild src/frontend/main.ts --bundle --sourcemap --watch --outfile=public/app.mod.js",
+    "web:prod": "esbuild src/frontend/main.ts --bundle --minify --sourcemap --outfile=public/app.mod.js"
   },
   "keywords": [
     "sakuga",
@@ -40,6 +43,7 @@
     "@types/multer": "^1.4.11",
     "@types/node": "^18.19.3",
     "@types/yargs": "^17.0.32",
+    "esbuild": "^0.21.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   },
