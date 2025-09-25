@@ -191,16 +191,42 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Generate clips form submission
+    function readSceneOptionsFromForm() {
+        const parseFloatSafe = (value) => {
+            const n = parseFloat(value);
+            return Number.isFinite(n) ? n : undefined;
+        };
+        const parseIntSafe = (value) => {
+            const n = parseInt(value, 10);
+            return Number.isFinite(n) ? n : undefined;
+        };
+
+        const minDuration = parseFloatSafe(document.getElementById('minDuration').value);
+        const maxDuration = parseFloatSafe(document.getElementById('maxDuration').value);
+        const threshold = parseFloatSafe(document.getElementById('threshold').value);
+        const maxClipsPerVideo = parseIntSafe(document.getElementById('maxClipsPerVideo')?.value);
+        const scenePadding = parseFloatSafe(document.getElementById('scenePadding')?.value);
+        const minGapBetweenClips = parseFloatSafe(document.getElementById('minGapBetweenClips')?.value);
+        const detectionSelect = document.getElementById('detectionMethod');
+        const detectionMethod = detectionSelect ? detectionSelect.value : undefined;
+
+        const options = {};
+        if (minDuration && minDuration > 0) options.minDuration = minDuration;
+        if (maxDuration && maxDuration > 0) options.maxDuration = maxDuration;
+        if (threshold && threshold > 0) options.threshold = threshold;
+        if (maxClipsPerVideo && maxClipsPerVideo > 0) options.maxClipsPerVideo = maxClipsPerVideo;
+        if (typeof scenePadding === 'number' && scenePadding >= 0) options.scenePadding = scenePadding;
+        if (typeof minGapBetweenClips === 'number' && minGapBetweenClips >= 0) options.minGapBetweenClips = minGapBetweenClips;
+        if (detectionMethod) options.detectionMethod = detectionMethod;
+        return options;
+    }
+
     document.getElementById('generateClipsForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const folderPath = document.getElementById('folderSelect').value;
+        const sceneOptions = readSceneOptionsFromForm();
 
-        const minDuration = parseFloat(document.getElementById('minDuration').value) || 1.0;
-        const maxDuration = parseFloat(document.getElementById('maxDuration').value) || 3.0;
-        const threshold = parseFloat(document.getElementById('threshold').value) || 30;
-        // Eliminado el checkbox useFFmpeg, siempre usamos PySceneDetect con fallback a FFmpeg
-
-        await generateClipsFromFolder(folderPath, minDuration, maxDuration, threshold);
+        await generateClipsFromFolder(folderPath, sceneOptions);
     });
 
     // Generate clips for all folders
@@ -208,11 +234,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (generateAllBtn) {
         generateAllBtn.addEventListener('click', async (e) => {
             e.preventDefault();
-            const minDuration = parseFloat(document.getElementById('minDuration').value) || 1.0;
-            const maxDuration = parseFloat(document.getElementById('maxDuration').value) || 3.0;
-            const threshold = parseFloat(document.getElementById('threshold').value) || 30;
+            const sceneOptions = readSceneOptionsFromForm();
 
-            await generateClipsFromFolder('', minDuration, maxDuration, threshold);
+            await generateClipsFromFolder('', sceneOptions);
         });
     }
 
@@ -1997,7 +2021,7 @@ async function startDownload(params) {
 }
 
 // Generate clips from a video
-async function generateClips(videoPath, minDuration, maxDuration, threshold, useFFmpeg) {
+async function generateClips(videoPath, sceneOptions = {}) {
     const statusEl = document.getElementById('generationStatus');
     const progressContainer = document.querySelector('#generate .progress');
     const progressBar = document.getElementById('generationProgress');
@@ -2018,10 +2042,7 @@ async function generateClips(videoPath, minDuration, maxDuration, threshold, use
             },
             body: JSON.stringify({
                 videoPath,
-                minDuration,
-                maxDuration,
-                threshold,
-                useFFmpeg
+                ...sceneOptions
             })
         });
 
@@ -2132,7 +2153,7 @@ async function generateClips(videoPath, minDuration, maxDuration, threshold, use
 }
 
 // Generate clips from all videos in a folder
-async function generateClipsFromFolder(folderPath, minDuration, maxDuration, threshold) {
+async function generateClipsFromFolder(folderPath, sceneOptions = {}) {
     const statusEl = document.getElementById('generationStatus');
     const progressContainer = document.querySelector('#generate .progress');
     const progressBar = document.getElementById('generationProgress');
@@ -2153,9 +2174,7 @@ async function generateClipsFromFolder(folderPath, minDuration, maxDuration, thr
             },
             body: JSON.stringify({
                 folderPath,
-                minDuration,
-                maxDuration,
-                threshold
+                ...sceneOptions
             })
         });
 

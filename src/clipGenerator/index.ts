@@ -8,9 +8,14 @@ import ffprobe from 'ffprobe-static';
  * Opciones para la detección de escenas
  */
 export interface SceneDetectionOptions {
-    minDuration?: number;  // Duración mínima en segundos (default: 1.0)
-    maxDuration?: number;  // Duración máxima en segundos (default: 3.0)
-    threshold?: number;    // Umbral para detectar cambios de escena (default: 30)
+    minDuration?: number;          // Minimum duration in seconds (default: 0.8)
+    maxDuration?: number;          // Maximum duration in seconds (default: 4.0)
+    threshold?: number;            // Scene change threshold for PySceneDetect (default: 18)
+    maxClipsPerVideo?: number;     // Maximum clips to keep per video (default: 6)
+    scenePadding?: number;         // Seconds to pad before and after each clip (default: 0.25)
+    minGapBetweenClips?: number;   // Minimum separation between clips in seconds (default: 0.4)
+    detectionMethod?: 'auto' | 'pyscenedetect' | 'ffmpeg'; // Preferred detection strategy
+    useFFmpegDetection?: boolean;  // Legacy flag kept for backwards compatibility
 }
 
 // Configuración de rutas para FFmpeg
@@ -102,6 +107,69 @@ export class ClipGenerator {
         if (!fs.existsSync(outputDirectory)) {
             fs.mkdirSync(outputDirectory, { recursive: true });
         }
+    }
+
+    private resolveDetectionMethod(options: SceneDetectionOptions = {}): 'auto' | 'pyscenedetect' | 'ffmpeg' {
+        if (options.detectionMethod) {
+            return options.detectionMethod;
+        }
+        if (options.useFFmpegDetection) {
+            return 'ffmpeg';
+        }
+        return 'auto';
+    }
+
+    private sanitizeSceneOptions(options: SceneDetectionOptions = {}): SceneDetectionOptions {
+        const sanitized: SceneDetectionOptions = { ...options };
+
+        const minDuration = typeof sanitized.minDuration === 'number' && Number.isFinite(sanitized.minDuration) && sanitized.minDuration > 0
+            ? sanitized.minDuration
+            : 0.8;
+        const maxDurationCandidate = typeof sanitized.maxDuration === 'number' && Number.isFinite(sanitized.maxDuration) && sanitized.maxDuration > 0
+            ? sanitized.maxDuration
+            : 4.0;
+        const maxDuration = Math.max(minDuration, maxDurationCandidate);
+
+        sanitized.minDuration = minDuration;
+        sanitized.maxDuration = maxDuration;
+
+        const threshold = typeof sanitized.threshold === 'number' && Number.isFinite(sanitized.threshold)
+            ? sanitized.threshold
+            : 18;
+        sanitized.threshold = threshold;
+
+        sanitized.scenePadding = typeof sanitized.scenePadding === 'number' && Number.isFinite(sanitized.scenePadding) && sanitized.scenePadding >= 0
+            ? sanitized.scenePadding
+            : 0.25;
+
+        sanitized.minGapBetweenClips = typeof sanitized.minGapBetweenClips === 'number' && Number.isFinite(sanitized.minGapBetweenClips) && sanitized.minGapBetweenClips >= 0
+            ? sanitized.minGapBetweenClips
+            : 0.4;
+
+        if (typeof sanitized.maxClipsPerVideo === 'number' && Number.isFinite(sanitized.maxClipsPerVideo)) {
+            if (sanitized.maxClipsPerVideo <= 0) {
+                sanitized.maxClipsPerVideo = undefined;
+            } else {
+                sanitized.maxClipsPerVideo = Math.floor(sanitized.maxClipsPerVideo);
+            }
+        } else {
+            sanitized.maxClipsPerVideo = 6;
+        }
+
+        if (sanitized.detectionMethod === 'ffmpeg') {
+            sanitized.useFFmpegDetection = true;
+        }
+
+        return sanitized;
+    }
+
+    private getFfmpegSceneThreshold(options: SceneDetectionOptions): number {
+        const raw = options.threshold ?? 18;
+        const normalized = raw > 1 ? raw / 100 : raw;
+        if (!Number.isFinite(normalized) || normalized <= 0) {
+            return 0.1;
+        }
+        return Math.min(Math.max(normalized, 0.01), 1);
     }
 
     /**
@@ -215,30 +283,117 @@ export class ClipGenerator {
      * @param options Opciones de detección de escenas
      * @returns Promesa con array de rutas a los clips generados
      */
+    private async prepareSegments(
+        videoPath: string,
+        segments: [number, number][],
+        options: SceneDetectionOptions = {},
+        knownVideoDuration?: number
+    ): Promise<[number, number][]> {
+        if (!segments.length) {
+            return [];
+        }
+
+        const minDuration = Math.max(0, options.minDuration ?? 0.8);
+        const padding = Math.max(0, options.scenePadding ?? 0.25);
+        const minGap = Math.max(0, options.minGapBetweenClips ?? 0.4);
+        const maxClips = options.maxClipsPerVideo && options.maxClipsPerVideo > 0
+            ? Math.floor(options.maxClipsPerVideo)
+            : 0;
+        const videoDuration = typeof knownVideoDuration === 'number' && !Number.isNaN(knownVideoDuration)
+            ? knownVideoDuration
+            : await this.getVideoDuration(videoPath);
+
+        const normalized = segments
+            .map(([start, end]) => {
+                if ((end - start) < minDuration) {
+                    return null;
+                }
+                const paddedStart = Math.max(0, start - padding);
+                const paddedEnd = Math.min(videoDuration, end + padding);
+                if (paddedEnd - paddedStart <= 0.1) {
+                    return null;
+                }
+                return [paddedStart, paddedEnd] as [number, number];
+            })
+            .filter((value): value is [number, number] => Boolean(value));
+
+        if (!normalized.length) {
+            return [];
+        }
+
+        let selection = normalized
+            .map(seg => ({ seg, duration: seg[1] - seg[0] }))
+            .filter(item => item.duration > 0.1);
+
+        if (!selection.length) {
+            return [];
+        }
+
+        if (maxClips && selection.length > maxClips) {
+            selection.sort((a, b) => {
+                if (b.duration === a.duration) {
+                    return a.seg[0] - b.seg[0];
+                }
+                return b.duration - a.duration;
+            });
+            selection = selection.slice(0, maxClips);
+        }
+
+        selection.sort((a, b) => a.seg[0] - b.seg[0]);
+
+        const merged: [number, number][] = [];
+        for (const { seg } of selection) {
+            if (!merged.length) {
+                merged.push([...seg] as [number, number]);
+                continue;
+            }
+
+            const last = merged[merged.length - 1];
+            if ((seg[0] - last[1]) < minGap) {
+                last[1] = Math.min(videoDuration, Math.max(last[1], seg[1]));
+            } else {
+                merged.push([...seg] as [number, number]);
+            }
+        }
+
+        if (maxClips && merged.length > maxClips) {
+            return merged
+                .map(seg => ({ seg, duration: seg[1] - seg[0] }))
+                .sort((a, b) => {
+                    if (b.duration === a.duration) {
+                        return a.seg[0] - b.seg[0];
+                    }
+                    return b.duration - a.duration;
+                })
+                .slice(0, maxClips)
+                .map(item => item.seg)
+                .sort((a, b) => a[0] - b[0]);
+        }
+
+        return merged;
+    }
+
     async detectScenesAndGenerateClips(
         videoPath: string,
         options: SceneDetectionOptions = {}
     ): Promise<string[]> {
-        // Valores por defecto
-        const minDuration = options.minDuration || 1.0;
-        const maxDuration = options.maxDuration || 3.0;
-        const threshold = options.threshold || 30;
+        const sanitizedOptions = this.sanitizeSceneOptions(options);
+        const minDuration = sanitizedOptions.minDuration ?? 0.8;
+        const maxDuration = sanitizedOptions.maxDuration ?? Math.max(minDuration, 4.0);
+        const threshold = sanitizedOptions.threshold ?? 18;
 
         console.log(`Detecting scenes in ${videoPath}...`);
-        console.log(`Options: minDuration=${minDuration}, maxDuration=${maxDuration}, threshold=${threshold}`);
+        console.log(`Options: minDuration=${minDuration}, maxDuration=${maxDuration}, threshold=${threshold}, maxClips=${sanitizedOptions.maxClipsPerVideo ?? 'unlimited'}`);
 
         return new Promise((resolve, reject) => {
-            // Crear un directorio temporal para los archivos de análisis
             const tempDir = path.join(this.outputDirectory, '../temp');
             if (!fs.existsSync(tempDir)) {
                 fs.mkdirSync(tempDir, { recursive: true });
             }
 
-            // Nombre base del video para el archivo CSV
             const videoBaseName = path.basename(videoPath, path.extname(videoPath));
             const csvFile = path.join(tempDir, `${videoBaseName}-Scenes.csv`);
 
-            // Comando para detectar escenas usando PySceneDetect sin la opción --csv
             const args = [
                 '-m', 'scenedetect',
                 '--input', videoPath,
@@ -268,115 +423,81 @@ export class ClipGenerator {
             sceneDetectProcess.on('close', async (code) => {
                 if (code === 0) {
                     try {
-                        // Lista para almacenar los límites de escenas (cada cambio de escena)
-                        const sceneChanges: number[] = [];
-                        let timeSegments: [number, number][] = [];
+                        const timeSegments: [number, number][] = [];
 
-                        // Verificar si el archivo CSV existe (PySceneDetect lo genera por defecto)
                         if (fs.existsSync(csvFile)) {
-                            console.log(`Found scene data file: ${csvFile}`);
-
-                            // Leer el archivo CSV
                             const csvContent = fs.readFileSync(csvFile, 'utf8');
-                            const lines = csvContent.split('\n').filter(line => line.trim() !== '');
+                            const lines = csvContent.split(/\r?\n/).filter(line => line.trim() !== '');
 
-                            // Extraer tiempos de inicio y fin de las escenas del CSV
-                            // Típicamente el CSV tiene este formato:
-                            // Scene Number,Start Frame,Start Timecode,Start Time (seconds),End Frame,End Timecode,End Time (seconds),Length (frames),Length (timecode),Length (seconds)
-
-                            // Saltamos la línea de encabezado
                             for (let i = 1; i < lines.length; i++) {
                                 const columns = lines[i].split(',');
-                                if (columns.length >= 7) {
-                                    // Índices basados en el formato del CSV
-                                    const startTimeSeconds = parseFloat(columns[3]); // Start Time (seconds)
-                                    const endTimeSeconds = parseFloat(columns[6]);   // End Time (seconds)
-                                    const duration = endTimeSeconds - startTimeSeconds;
-
-                                    // Solo considerar escenas que tengan una duración adecuada
-                                    if (duration >= minDuration && duration <= maxDuration) {
-                                        timeSegments.push([startTimeSeconds, endTimeSeconds]);
-                                    } else if (duration > maxDuration) {
-                                        // Para escenas muy largas, solo tomamos el inicio (más probable que tenga acción interesante)
-                                        timeSegments.push([startTimeSeconds, startTimeSeconds + maxDuration]);
-                                    }
-                                    // Las escenas muy cortas se ignoran
+                                if (columns.length < 7) {
+                                    continue;
                                 }
-                            }
 
-                            // Limitar el número máximo de clips a 5 por video para evitar clips innecesarios
-                            // Ordenamos por duración para quedarnos con los clips más significativos
-                            timeSegments.sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
-                            if (timeSegments.length > 5) {
-                                console.log(`Limiting clips to the 5 most significant ones (from ${timeSegments.length})`);
-                                timeSegments = timeSegments.slice(0, 5);
-                                // Reordenar por tiempo de inicio para mantener coherencia temporal
-                                timeSegments.sort((a, b) => a[0] - b[0]);
+                                const startTimeSeconds = parseFloat(columns[3]);
+                                const endTimeSeconds = parseFloat(columns[6]);
+
+                                if (!Number.isFinite(startTimeSeconds) || !Number.isFinite(endTimeSeconds)) {
+                                    continue;
+                                }
+
+                                const duration = endTimeSeconds - startTimeSeconds;
+
+                                if (duration < minDuration) {
+                                    continue;
+                                }
+
+                                if (duration > maxDuration) {
+                                    let chunkStart = startTimeSeconds;
+                                    while (chunkStart + minDuration <= endTimeSeconds) {
+                                        const chunkEnd = Math.min(chunkStart + maxDuration, endTimeSeconds);
+                                        timeSegments.push([chunkStart, chunkEnd]);
+                                        if (chunkEnd >= endTimeSeconds) {
+                                            break;
+                                        }
+                                        chunkStart = chunkEnd;
+                                    }
+                                } else {
+                                    timeSegments.push([startTimeSeconds, endTimeSeconds]);
+                                }
                             }
                         } else {
-                            console.log(`CSV file not found at expected location: ${csvFile}`);
-                            console.log('Trying to parse scene information from stdout...');
-
-                            // Intentar extraer información de la salida estándar
-                            const sceneInfoRegex = /\|\s+(\d+)\s+\|\s+\d+\s+\|\s+(\d+:\d+:\d+\.\d+)\s+\|\s+\d+\s+\|\s+(\d+:\d+:\d+\.\d+)\s+\|/g;
-                            let match;
-
-                            while ((match = sceneInfoRegex.exec(stdoutData)) !== null) {
-                                const sceneNumber = parseInt(match[1]);
-                                const startTimeStr = match[2];
-                                const endTimeStr = match[3];
-
-                                const startTime = this.timeToSeconds(startTimeStr);
-                                const endTime = this.timeToSeconds(endTimeStr);
-
-                                if (!isNaN(startTime) && !isNaN(endTime)) {
-                                    const duration = endTime - startTime;
-
-                                    if (duration >= minDuration && duration <= maxDuration) {
-                                        timeSegments.push([startTime, endTime]);
-                                    } else if (duration > maxDuration) {
-                                        // Para escenas muy largas, solo tomamos el inicio
-                                        timeSegments.push([startTime, startTime + maxDuration]);
-                                    }
-                                }
-                            }
-
-                            // Limitamos a 5 clips significativos
-                            timeSegments.sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
-                            if (timeSegments.length > 5) {
-                                timeSegments = timeSegments.slice(0, 5);
-                                // Reordenar por tiempo
-                                timeSegments.sort((a, b) => a[0] - b[0]);
-                            }
+                            console.warn(`Scene CSV not found at ${csvFile}, PySceneDetect output:
+${stdoutData}`);
                         }
 
-                        console.log(`Selected ${timeSegments.length} clips for generation`);
+                        const videoDuration = await this.getVideoDuration(videoPath);
+                        const normalizedSegments = await this.prepareSegments(videoPath, timeSegments, sanitizedOptions, videoDuration);
 
-                        // Crear directorio específico para este video
+                        console.log(`Selected ${normalizedSegments.length} clips for generation`);
+
+                        if (!normalizedSegments.length) {
+                            resolve([]);
+                            return;
+                        }
+
                         const nombreVideo = path.basename(videoPath, path.extname(videoPath));
                         const directorioVideo = path.join(this.outputDirectory, nombreVideo);
                         if (!fs.existsSync(directorioVideo)) {
                             fs.mkdirSync(directorioVideo, { recursive: true });
                         }
 
-                        // Generar clips para cada segmento
                         const clipPaths: string[] = [];
-                        for (let i = 0; i < timeSegments.length; i++) {
-                            const [inicio, fin] = timeSegments[i];
+                        for (let i = 0; i < normalizedSegments.length; i++) {
+                            const [inicio, fin] = normalizedSegments[i];
                             const outputFileName = `${nombreVideo}_scene${i + 1}.mp4`;
                             const outputPath = path.join(directorioVideo, outputFileName);
 
                             try {
-                                // Generar clip usando FFmpeg (sin audio como en Python)
                                 await this.generateClipWithoutAudio(videoPath, inicio, fin, outputPath);
                                 clipPaths.push(outputPath);
-                                console.log(`Generated clip ${i + 1}/${timeSegments.length}: ${outputFileName}`);
+                                console.log(`Generated clip ${i + 1}/${normalizedSegments.length}: ${outputFileName}`);
                             } catch (error) {
                                 console.error(`Error generando clip ${outputFileName}:`, error);
                             }
                         }
 
-                        console.log(`Successfully generated ${clipPaths.length} clips from ${videoPath}`);
                         resolve(clipPaths);
                     } catch (error) {
                         console.error('Error processing scenes:', error);
@@ -386,11 +507,13 @@ export class ClipGenerator {
                     console.error(`PySceneDetect process exited with error code ${code}`);
                     console.error(`stderr: ${stderrData}`);
 
-                    // Intento con ffmpeg como fallback
-                    console.warn(`PySceneDetect failed, falling back to FFmpeg method${stderrData ? ': ' + stderrData : ''}`);
+                    if (sanitizedOptions.detectionMethod === 'pyscenedetect') {
+                        reject(new Error(`PySceneDetect failed with code ${code}`));
+                        return;
+                    }
 
                     try {
-                        const clipPaths = await this.detectScenesWithFFmpegAndGenerateClips(videoPath, options);
+                        const clipPaths = await this.detectScenesWithFFmpegAndGenerateClips(videoPath, sanitizedOptions);
                         resolve(clipPaths);
                     } catch (ffmpegError) {
                         console.error('Error processing FFmpeg fallback:', ffmpegError);
@@ -405,34 +528,6 @@ export class ClipGenerator {
         });
     }
 
-    /**
-     * Convierte un tiempo en formato "HH:MM:SS.mmm" a segundos
-     * @param timeString Tiempo en formato "HH:MM:SS.mmm"
-     * @returns Tiempo en segundos
-     */
-    private timeToSeconds(timeString: string): number {
-        if (!timeString) return 0;
-
-        try {
-            const parts = timeString.trim().split(':');
-            if (parts.length === 3) {
-                const hours = parseInt(parts[0]) || 0;
-                const minutes = parseInt(parts[1]) || 0;
-                const seconds = parseFloat(parts[2]) || 0;
-                return hours * 3600 + minutes * 60 + seconds;
-            } else if (parts.length === 2) {
-                const minutes = parseInt(parts[0]) || 0;
-                const seconds = parseFloat(parts[1]) || 0;
-                return minutes * 60 + seconds;
-            } else if (parts.length === 1) {
-                return parseFloat(parts[0]) || 0;
-            }
-            return 0;
-        } catch (error) {
-            console.error(`Error al convertir tiempo "${timeString}" a segundos:`, error);
-            return 0;
-        }
-    }
 
     /**
      * Alternativa usando FFmpeg para detectar cambios de escena
@@ -441,29 +536,44 @@ export class ClipGenerator {
      * @param options Opciones de detección
      * @returns Promesa con array de rutas a los clips generados
      */
+    async generateClipsForVideo(
+        videoPath: string,
+        options: SceneDetectionOptions = {}
+    ): Promise<string[]> {
+        const sanitizedOptions = this.sanitizeSceneOptions(options);
+        const detectionMethod = this.resolveDetectionMethod(sanitizedOptions);
+        sanitizedOptions.detectionMethod = detectionMethod;
+        sanitizedOptions.useFFmpegDetection = detectionMethod === 'ffmpeg';
+
+        if (detectionMethod === 'ffmpeg') {
+            return this.detectScenesWithFFmpegAndGenerateClips(videoPath, sanitizedOptions);
+        }
+
+        if (detectionMethod === 'pyscenedetect') {
+            return this.detectScenesAndGenerateClips(videoPath, sanitizedOptions);
+        }
+
+        try {
+            return await this.detectScenesAndGenerateClips(videoPath, sanitizedOptions);
+        } catch (error) {
+            console.warn(`PySceneDetect failed for ${videoPath}, falling back to FFmpeg:`, error);
+            return this.detectScenesWithFFmpegAndGenerateClips(videoPath, sanitizedOptions);
+        }
+    }
+
+
     async detectScenesWithFFmpegAndGenerateClips(
         videoPath: string,
         options: SceneDetectionOptions = {}
     ): Promise<string[]> {
-        const minDuration = options.minDuration || 1.0;
-        const maxDuration = options.maxDuration || 3.0;
-        const threshold = options.threshold || 0.3;
+        const sanitizedOptions = this.sanitizeSceneOptions(options);
+        const minDuration = sanitizedOptions.minDuration ?? 0.8;
+        const maxDuration = sanitizedOptions.maxDuration ?? Math.max(minDuration, 4.0);
+        const threshold = this.getFfmpegSceneThreshold(sanitizedOptions);
 
-        console.log(`Detecting scenes with FFmpeg in ${videoPath}...`);
+        console.log(`Detecting scenes with FFmpeg in ${videoPath} using threshold ${threshold}`);
 
         return new Promise((resolve, reject) => {
-            // Crear un directorio temporal para los archivos de análisis
-            const tempDir = path.join(this.outputDirectory, '../temp');
-            if (!fs.existsSync(tempDir)) {
-                fs.mkdirSync(tempDir, { recursive: true });
-            }
-
-            const tempTxtFile = path.join(
-                tempDir,
-                `ffmpeg_scenes_${path.basename(videoPath, path.extname(videoPath))}_${Date.now()}.txt`
-            );
-
-            // Usar FFmpeg para detectar cambios de escena
             const args = [
                 '-i', videoPath,
                 '-filter:v', `select='gt(scene,${threshold})',showinfo`,
@@ -480,91 +590,90 @@ export class ClipGenerator {
             });
 
             ffmpegProcess.on('close', async (code) => {
-                if (code === 0) {
-                    try {
-                        // Analizar la salida de FFmpeg para encontrar los cambios de escena
-                        const sceneChanges: number[] = [];
-                        const regex = /pts_time:(\d+\.\d+)/g;
-                        let match;
-
-                        while ((match = regex.exec(stderrData)) !== null) {
-                            sceneChanges.push(parseFloat(match[1]));
-                        }
-
-                        // Añadir el tiempo 0 si no está
-                        if (sceneChanges.length === 0 || sceneChanges[0] > 0.1) {
-                            sceneChanges.unshift(0);
-                        }
-
-                        // Obtener la duración total del video usando FFprobe
-                        const videoDuration = await this.getVideoDuration(videoPath);
-                        sceneChanges.push(videoDuration);
-
-                        // Crear segmentos basados en los cambios de escena
-                        const timeSegments: [number, number][] = [];
-
-                        for (let i = 0; i < sceneChanges.length - 1; i++) {
-                            const startTime = sceneChanges[i];
-                            const endTime = sceneChanges[i + 1];
-                            const duration = endTime - startTime;
-
-                            if (duration < minDuration) {
-                                continue;
-                            } else if (duration > maxDuration) {
-                                // Dividir en clips de duración máxima
-                                const numClips = Math.floor(duration / maxDuration);
-                                for (let j = 0; j < numClips; j++) {
-                                    const clipStart = startTime + (j * maxDuration);
-                                    const clipEnd = clipStart + maxDuration;
-                                    timeSegments.push([clipStart, clipEnd]);
-                                }
-
-                                // Resto si es mayor que la duración mínima
-                                const remainingDuration = duration % maxDuration;
-                                if (remainingDuration >= minDuration) {
-                                    const clipStart = startTime + (numClips * maxDuration);
-                                    timeSegments.push([clipStart, endTime]);
-                                }
-                            } else {
-                                timeSegments.push([startTime, endTime]);
-                            }
-                        }
-
-                        console.log(`Found ${timeSegments.length} valid scene segments`);
-
-                        // Crear directorio específico para este video
-                        const nombreVideo = path.basename(videoPath, path.extname(videoPath));
-                        const directorioVideo = path.join(this.outputDirectory, nombreVideo);
-                        if (!fs.existsSync(directorioVideo)) {
-                            fs.mkdirSync(directorioVideo, { recursive: true });
-                        }
-
-                        // Generar clips para cada segmento
-                        const clipPaths: string[] = [];
-                        for (let i = 0; i < timeSegments.length; i++) {
-                            const [inicio, fin] = timeSegments[i];
-                            const outputFileName = `${nombreVideo}_scene${i + 1}.mp4`;
-                            const outputPath = path.join(directorioVideo, outputFileName);
-
-                            try {
-                                // Generar clip usando FFmpeg (sin audio como en Python)
-                                await this.generateClipWithoutAudio(videoPath, inicio, fin, outputPath);
-                                clipPaths.push(outputPath);
-                                console.log(`Generated clip ${i + 1}/${timeSegments.length}: ${outputFileName}`);
-                            } catch (error) {
-                                console.error(`Error generando clip ${outputFileName}:`, error);
-                            }
-                        }
-
-                        console.log(`Successfully generated ${clipPaths.length} clips from ${videoPath}`);
-                        resolve(clipPaths);
-                    } catch (error) {
-                        console.error('Error processing FFmpeg scene detection:', error);
-                        reject(error);
-                    }
-                } else {
+                if (code !== 0) {
                     console.error('FFmpeg stderr:', stderrData);
                     reject(new Error(`FFmpeg process exited with code ${code}`));
+                    return;
+                }
+
+                try {
+                    const sceneChanges: number[] = [];
+                    const regex = /pts_time:(\d+\.\d+)/g;
+                    let match;
+
+                    while ((match = regex.exec(stderrData)) !== null) {
+                        sceneChanges.push(parseFloat(match[1]));
+                    }
+
+                    if (!sceneChanges.length || sceneChanges[0] > 0.1) {
+                        sceneChanges.unshift(0);
+                    }
+
+                    const videoDuration = await this.getVideoDuration(videoPath);
+                    if (sceneChanges[sceneChanges.length - 1] !== videoDuration) {
+                        sceneChanges.push(videoDuration);
+                    }
+
+                    const timeSegments: [number, number][] = [];
+
+                    for (let i = 0; i < sceneChanges.length - 1; i++) {
+                        const startTime = sceneChanges[i];
+                        const endTime = sceneChanges[i + 1];
+                        const duration = endTime - startTime;
+
+                        if (duration < minDuration) {
+                            continue;
+                        }
+
+                        if (duration > maxDuration) {
+                            let chunkStart = startTime;
+                            while (chunkStart + minDuration <= endTime) {
+                                const chunkEnd = Math.min(chunkStart + maxDuration, endTime);
+                                timeSegments.push([chunkStart, chunkEnd]);
+                                if (chunkEnd >= endTime) {
+                                    break;
+                                }
+                                chunkStart = chunkEnd;
+                            }
+                        } else {
+                            timeSegments.push([startTime, endTime]);
+                        }
+                    }
+
+                    const normalizedSegments = await this.prepareSegments(videoPath, timeSegments, sanitizedOptions, videoDuration);
+
+                    console.log(`FFmpeg produced ${normalizedSegments.length} normalized segments`);
+
+                    if (!normalizedSegments.length) {
+                        resolve([]);
+                        return;
+                    }
+
+                    const nombreVideo = path.basename(videoPath, path.extname(videoPath));
+                    const directorioVideo = path.join(this.outputDirectory, nombreVideo);
+                    if (!fs.existsSync(directorioVideo)) {
+                        fs.mkdirSync(directorioVideo, { recursive: true });
+                    }
+
+                    const clipPaths: string[] = [];
+                    for (let i = 0; i < normalizedSegments.length; i++) {
+                        const [inicio, fin] = normalizedSegments[i];
+                        const outputFileName = `${nombreVideo}_scene${i + 1}.mp4`;
+                        const outputPath = path.join(directorioVideo, outputFileName);
+
+                        try {
+                            await this.generateClipWithoutAudio(videoPath, inicio, fin, outputPath);
+                            clipPaths.push(outputPath);
+                            console.log(`Generated clip ${i + 1}/${normalizedSegments.length}: ${outputFileName}`);
+                        } catch (error) {
+                            console.error(`Error generando clip ${outputFileName}:`, error);
+                        }
+                    }
+
+                    resolve(clipPaths);
+                } catch (error) {
+                    console.error('Error processing FFmpeg scene detection:', error);
+                    reject(error);
                 }
             });
 
@@ -573,6 +682,7 @@ export class ClipGenerator {
             });
         });
     }
+
 
     /**
      * Obtiene la duración de un video en segundos
@@ -652,14 +762,7 @@ export class ClipGenerator {
             console.log(`Processing video: ${videoPath}`);
 
             try {
-                // Intenta primero con PySceneDetect
-                let clips: string[] = [];
-                try {
-                    clips = await this.detectScenesAndGenerateClips(videoPath, options);
-                } catch (error) {
-                    // Si falla PySceneDetect, usa el método de FFmpeg como respaldo
-                    clips = await this.detectScenesWithFFmpegAndGenerateClips(videoPath, options);
-                }
+                const clips = await this.generateClipsForVideo(videoPath, options);
 
                 allClips.push(...clips);
                 console.log(`Generated ${clips.length} clips from ${videoPath}`);
@@ -872,7 +975,8 @@ export class ClipGenerator {
         videoPath: string,
         options: SceneDetectionOptions = {}
     ): Promise<[number, number][]> {
-        const threshold = options.threshold || 0.3; // Valor por defecto como en la implementación Python
+        const sanitizedOptions = this.sanitizeSceneOptions(options);
+        const threshold = this.getFfmpegSceneThreshold(sanitizedOptions); // Valor por defecto como en la implementación Python
 
         return new Promise((resolve, reject) => {
             // Usar FFmpeg para detectar cambios de escena

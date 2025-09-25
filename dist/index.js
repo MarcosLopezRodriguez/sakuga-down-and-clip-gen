@@ -74,12 +74,12 @@ const downloader = new downloader_1.default(DOWNLOADS_DIR);
 exports.downloader = downloader;
 const clipGenerator = new clipGenerator_1.default(CLIPS_DIR);
 exports.clipGenerator = clipGenerator;
-// Función principal que replica la funcionalidad del script Python
+// FunciÃ³n principal que replica la funcionalidad del script Python
 function processVideosToPythonClips(inputDir_1) {
     return __awaiter(this, arguments, void 0, function* (inputDir, options = { minDuration: 1.0, maxDuration: 2.99 }) {
         console.log('Iniciando procesamiento de videos al estilo Python...');
         try {
-            // Usar la implementación que replica el comportamiento del script Python
+            // Usar la implementaciÃ³n que replica el comportamiento del script Python
             const generatedClips = yield clipGenerator.processVideosLikePython(inputDir, options);
             console.log(`Procesamiento completado. Se generaron ${generatedClips.length} clips.`);
             return generatedClips;
@@ -90,18 +90,18 @@ function processVideosToPythonClips(inputDir_1) {
         }
     });
 }
-// Función para ayudar al usuario a procesar videos descargados previamente
+// FunciÃ³n para ayudar al usuario a procesar videos descargados previamente
 function processDownloadedVideos(category_1) {
     return __awaiter(this, arguments, void 0, function* (category, options = { minDuration: 1.0, maxDuration: 2.99 }) {
         const categoryPath = path.join(DOWNLOADS_DIR, category);
         if (!fs.existsSync(categoryPath)) {
-            throw new Error(`La categoría ${category} no existe en las descargas.`);
+            throw new Error(`La categorÃ­a ${category} no existe en las descargas.`);
         }
-        console.log(`Procesando videos descargados en la categoría: ${category}`);
+        console.log(`Procesando videos descargados en la categorÃ­a: ${category}`);
         return processVideosToPythonClips(categoryPath, options);
     });
 }
-// Configurar la línea de comandos con yargs
+// Configurar la lÃ­nea de comandos con yargs
 (0, yargs_1.default)((0, helpers_1.hideBin)(process.argv))
     .scriptName('sakuga-down-and-clip-gen')
     .usage('$0 <cmd> [args]')
@@ -140,7 +140,7 @@ function processDownloadedVideos(category_1) {
     .command('download [url]', 'Descargar videos de Sakugabooru', (yargs) => {
     return yargs
         .positional('url', {
-        describe: 'URL de Sakugabooru con etiquetas o post específico',
+        describe: 'URL de Sakugabooru con etiquetas o post especÃ­fico',
         type: 'string'
     })
         .option('tags-file', {
@@ -156,7 +156,7 @@ function processDownloadedVideos(category_1) {
     })
         .option('concurrency', {
         alias: 'c',
-        describe: 'Número de descargas simultáneas',
+        describe: 'NÃºmero de descargas simultÃ¡neas',
         type: 'number',
         default: 3
     })
@@ -205,22 +205,42 @@ function processDownloadedVideos(category_1) {
         default: 'output/clips'
     })
         .option('min-duration', {
-        describe: 'Duración mínima de los clips (segundos)',
+        describe: 'Duracion minima de los clips (segundos)',
         type: 'number',
-        default: 1.0
+        default: 0.8
     })
         .option('max-duration', {
-        describe: 'Duración máxima de los clips (segundos)',
+        describe: 'Duracion maxima de los clips (segundos)',
         type: 'number',
-        default: 3.0
+        default: 4.0
     })
         .option('threshold', {
-        describe: 'Umbral para la detección de escenas',
+        describe: 'Umbral para la deteccion de escenas (PySceneDetect)',
         type: 'number',
-        default: 30
+        default: 18
+    })
+        .option('max-clips', {
+        describe: 'Maximo de clips por video',
+        type: 'number',
+        default: 6
+    })
+        .option('scene-padding', {
+        describe: 'Segundos extra antes y despues de cada clip',
+        type: 'number',
+        default: 0.25
+    })
+        .option('min-gap', {
+        describe: 'Separacion minima entre clips (segundos)',
+        type: 'number',
+        default: 0.4
+    })
+        .option('method', {
+        describe: 'Metodo de deteccion (auto, pyscenedetect, ffmpeg)',
+        choices: ['auto', 'pyscenedetect', 'ffmpeg'],
+        default: 'auto'
     })
         .option('ffmpeg', {
-        describe: 'Usar FFmpeg para detección de escenas en lugar de PySceneDetect',
+        describe: 'Atajo para forzar el metodo FFmpeg',
         type: 'boolean',
         default: false
     });
@@ -228,28 +248,38 @@ function processDownloadedVideos(category_1) {
     try {
         const app = new app_1.SakugaDownAndClipGen('output/downloads', argv.output);
         const inputPath = argv.input;
+        const methodArg = typeof argv.method === 'string' ? argv.method.toLowerCase() : undefined;
         const sceneOptions = {
             minDuration: argv['min-duration'],
             maxDuration: argv['max-duration'],
             threshold: argv.threshold,
-            useFFmpegDetection: argv.ffmpeg
+            maxClipsPerVideo: argv['max-clips'],
+            scenePadding: argv['scene-padding'],
+            minGapBetweenClips: argv['min-gap']
         };
+        if (typeof sceneOptions.maxClipsPerVideo === 'number') {
+            if (sceneOptions.maxClipsPerVideo <= 0) {
+                delete sceneOptions.maxClipsPerVideo;
+            }
+            else {
+                sceneOptions.maxClipsPerVideo = Math.floor(sceneOptions.maxClipsPerVideo);
+            }
+        }
+        if (methodArg && ['auto', 'pyscenedetect', 'ffmpeg'].includes(methodArg)) {
+            sceneOptions.detectionMethod = methodArg;
+        }
+        if (argv.ffmpeg) {
+            sceneOptions.detectionMethod = 'ffmpeg';
+            sceneOptions.useFFmpegDetection = true;
+        }
         if (fs.existsSync(inputPath)) {
             const stats = fs.statSync(inputPath);
             if (stats.isFile()) {
-                // Procesar un solo archivo
                 console.log(`Procesando video: ${inputPath}`);
-                let clipPaths;
-                if (sceneOptions.useFFmpegDetection) {
-                    clipPaths = yield app['clipGenerator'].detectScenesWithFFmpegAndGenerateClips(inputPath, sceneOptions);
-                }
-                else {
-                    clipPaths = yield app['clipGenerator'].detectScenesAndGenerateClips(inputPath, sceneOptions);
-                }
+                const clipPaths = yield app['clipGenerator'].generateClipsForVideo(inputPath, sceneOptions);
                 console.log(`Se generaron ${clipPaths.length} clips del video.`);
             }
             else if (stats.isDirectory()) {
-                // Procesar un directorio
                 console.log(`Procesando directorio: ${inputPath}`);
                 const results = yield app.processVideosDirectoryAndGenerateClips(inputPath, sceneOptions);
                 let totalClips = 0;
@@ -263,7 +293,7 @@ function processDownloadedVideos(category_1) {
             console.error(`Error: La ruta ${inputPath} no existe.`);
             process.exit(1);
         }
-        console.log('Proceso de generación de clips completado!');
+        console.log('Proceso de generacion de clips completado!');
     }
     catch (error) {
         console.error('Error:', error);
@@ -275,7 +305,7 @@ function processDownloadedVideos(category_1) {
     return yargs
         .option('url', {
         alias: 'u',
-        describe: 'URL de Sakugabooru con etiquetas o post específico',
+        describe: 'URL de Sakugabooru con etiquetas o post especifico',
         type: 'string'
     })
         .option('tags-file', {
@@ -294,22 +324,42 @@ function processDownloadedVideos(category_1) {
         default: 'output/clips'
     })
         .option('min-duration', {
-        describe: 'Duración mínima de los clips (segundos)',
+        describe: 'Duracion minima de los clips (segundos)',
         type: 'number',
-        default: 1.0
+        default: 0.8
     })
         .option('max-duration', {
-        describe: 'Duración máxima de los clips (segundos)',
+        describe: 'Duracion maxima de los clips (segundos)',
         type: 'number',
-        default: 3.0
+        default: 4.0
     })
         .option('threshold', {
-        describe: 'Umbral para la detección de escenas',
+        describe: 'Umbral para la deteccion de escenas (PySceneDetect)',
         type: 'number',
-        default: 30
+        default: 18
+    })
+        .option('max-clips', {
+        describe: 'Maximo de clips por video',
+        type: 'number',
+        default: 6
+    })
+        .option('scene-padding', {
+        describe: 'Segundos extra antes y despues de cada clip',
+        type: 'number',
+        default: 0.25
+    })
+        .option('min-gap', {
+        describe: 'Separacion minima entre clips (segundos)',
+        type: 'number',
+        default: 0.4
+    })
+        .option('method', {
+        describe: 'Metodo de deteccion (auto, pyscenedetect, ffmpeg)',
+        choices: ['auto', 'pyscenedetect', 'ffmpeg'],
+        default: 'auto'
     })
         .option('ffmpeg', {
-        describe: 'Usar FFmpeg para detección de escenas en lugar de PySceneDetect',
+        describe: 'Atajo para forzar el metodo FFmpeg',
         type: 'boolean',
         default: false
     })
@@ -322,12 +372,30 @@ function processDownloadedVideos(category_1) {
 }, (argv) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const app = new app_1.SakugaDownAndClipGen(argv['download-dir'], argv['clips-dir']);
+        const methodArg = typeof argv.method === 'string' ? argv.method.toLowerCase() : undefined;
         const sceneOptions = {
             minDuration: argv['min-duration'],
             maxDuration: argv['max-duration'],
             threshold: argv.threshold,
-            useFFmpegDetection: argv.ffmpeg
+            maxClipsPerVideo: argv['max-clips'],
+            scenePadding: argv['scene-padding'],
+            minGapBetweenClips: argv['min-gap']
         };
+        if (typeof sceneOptions.maxClipsPerVideo === 'number') {
+            if (sceneOptions.maxClipsPerVideo <= 0) {
+                delete sceneOptions.maxClipsPerVideo;
+            }
+            else {
+                sceneOptions.maxClipsPerVideo = Math.floor(sceneOptions.maxClipsPerVideo);
+            }
+        }
+        if (methodArg && ['auto', 'pyscenedetect', 'ffmpeg'].includes(methodArg)) {
+            sceneOptions.detectionMethod = methodArg;
+        }
+        if (argv.ffmpeg) {
+            sceneOptions.detectionMethod = 'ffmpeg';
+            sceneOptions.useFFmpegDetection = true;
+        }
         let results = new Map();
         if (argv['tags-file']) {
             console.log(`Procesando archivo de etiquetas: ${argv['tags-file']}`);
@@ -335,21 +403,18 @@ function processDownloadedVideos(category_1) {
         }
         else if (argv.url) {
             console.log(`Procesando URL: ${argv.url}`);
-            // Si es una URL de etiquetas
             if (argv.url.includes('/post?tags=')) {
                 const tagName = new URL(argv.url).searchParams.get('tags') || '';
                 results = yield app.downloadTagsAndGenerateClips([tagName], sceneOptions);
             }
             else {
-                // Si es una URL directa a un video o post
-                const clipPaths = yield app.downloadAndGenerateClips(argv.url, []);
+                const clipPaths = yield app.downloadAndGenerateClips(argv.url, [], sceneOptions);
                 results.set(argv.url, clipPaths);
             }
         }
-        // Mostrar resumen
         let totalVideos = 0;
         let totalClips = 0;
-        results.forEach((clips, video) => {
+        results.forEach((clips) => {
             totalVideos++;
             totalClips += clips.length;
         });
@@ -363,22 +428,22 @@ function processDownloadedVideos(category_1) {
         process.exit(1);
     }
 }))
-    // Configuración general de yargs
+    // ConfiguraciÃ³n general de yargs
     .demandCommand(1, 'Debe especificar un comando')
     .strict()
     .alias('h', 'help')
     .alias('v', 'version')
-    .epilog('Para más información visita https://github.com/tu-usuario/sakuga-down-and-clip-gen')
+    .epilog('Para mÃ¡s informaciÃ³n visita https://github.com/tu-usuario/sakuga-down-and-clip-gen')
     .argv;
-// Punto de entrada principal (para uso en línea de comandos)
+// Punto de entrada principal (para uso en lÃ­nea de comandos)
 if (require.main === module) {
-    // Si se ejecuta directamente desde la línea de comandos
+    // Si se ejecuta directamente desde la lÃ­nea de comandos
     const args = process.argv.slice(2);
     const command = (_a = args[0]) === null || _a === void 0 ? void 0 : _a.toLowerCase();
     if (command === 'process') {
         const category = args[1];
         if (!category) {
-            console.error('Debe especificar una categoría para procesar');
+            console.error('Debe especificar una categorÃ­a para procesar');
             process.exit(1);
         }
         processDownloadedVideos(category)

@@ -126,7 +126,7 @@ class SakugaDownAndClipGen {
     setupWebSockets() {
         this.io.on('connection', (socket) => {
             console.log('Cliente conectado');
-            // Eventos personalizados aquí si son necesarios
+            // Eventos personalizados aquÃ­ si son necesarios
             socket.on('disconnect', () => {
                 console.log('Cliente desconectado');
             });
@@ -140,27 +140,27 @@ class SakugaDownAndClipGen {
         });
         this.downloader.on('downloadComplete', (videoInfo) => {
             this.io.emit('downloadComplete', videoInfo);
-            // Notificar también la actualización de la lista de directorios
+            // Notificar tambiÃ©n la actualizaciÃ³n de la lista de directorios
             const downloads = this.getDirectoryContents(this.downloadDirectory);
             this.io.emit('directoriesUpdated', { type: 'downloads', contents: downloads });
         });
     }
     /**
-     * Configura la aplicación Express
+     * Configura la aplicaciÃ³n Express
      */
     setupExpressApp() {
         // Middleware para procesar JSON
         this.app.use(express_1.default.json());
         this.app.use(express_1.default.urlencoded({ extended: true }));
-        // Servir archivos estáticos
+        // Servir archivos estÃ¡ticos
         this.app.use(express_1.default.static(path.join(__dirname, '../public')));
         // Servir los videos y clips descargados
         this.app.use('/downloads', express_1.default.static(this.downloadDirectory));
         this.app.use('/clips', express_1.default.static(this.clipDirectory));
         this.app.use('/beat_synced_videos', express_1.default.static(this.beatSyncedVideosDirectory));
-        // Endpoint para la página principal
+        // Endpoint para la pÃ¡gina principal
         this.app.get('/', this.handleGetHome.bind(this));
-        // API para obtener información de los directorios
+        // API para obtener informaciÃ³n de los directorios
         this.app.get('/api/downloads', this.handleGetDownloads.bind(this));
         this.app.get('/api/clips', this.handleGetClips.bind(this));
         // Nuevas APIs para carpetas
@@ -225,10 +225,10 @@ class SakugaDownAndClipGen {
                 res.json({ success: true, message: 'Descarga iniciada' });
                 // Iniciar la descarga en background
                 const videoPath = yield this.downloader.downloadVideo(url);
-                // La notificación se manejará a través de WebSockets
+                // La notificaciÃ³n se manejarÃ¡ a travÃ©s de WebSockets
             }
             catch (error) {
-                // Si ya se envió la respuesta, notificar el error por WebSocket
+                // Si ya se enviÃ³ la respuesta, notificar el error por WebSocket
                 if (res.headersSent) {
                     this.io.emit('downloadError', { error: error.message });
                 }
@@ -243,7 +243,7 @@ class SakugaDownAndClipGen {
             try {
                 const { tags } = req.body;
                 if (!tags || !Array.isArray(tags) || tags.length === 0) {
-                    res.status(400).json({ error: 'Se requieren etiquetas válidas' });
+                    res.status(400).json({ error: 'Se requieren etiquetas vÃ¡lidas' });
                     return;
                 }
                 console.log(`Procesando etiquetas: ${tags.join(', ')}`);
@@ -254,10 +254,10 @@ class SakugaDownAndClipGen {
                     const tagUrl = `${this.downloader['baseUrl']}/post?tags=${tag}`;
                     yield this.downloader.downloadVideosFromTag(tagUrl);
                 }
-                // Las notificaciones se manejarán a través de WebSockets
+                // Las notificaciones se manejarÃ¡n a travÃ©s de WebSockets
             }
             catch (error) {
-                // Si ya se envió la respuesta, notificar el error por WebSocket
+                // Si ya se enviÃ³ la respuesta, notificar el error por WebSocket
                 if (res.headersSent) {
                     this.io.emit('downloadError', { error: error.message });
                 }
@@ -267,21 +267,71 @@ class SakugaDownAndClipGen {
             }
         });
     }
+    parseSceneOptions(body) {
+        var _a, _b, _c;
+        const parseNumber = (value) => {
+            if (value === null || value === undefined || value === '') {
+                return undefined;
+            }
+            if (typeof value === 'number') {
+                return Number.isFinite(value) ? value : undefined;
+            }
+            const parsed = parseFloat(value);
+            return Number.isFinite(parsed) ? parsed : undefined;
+        };
+        const minDuration = Math.max(0.1, (_a = parseNumber(body === null || body === void 0 ? void 0 : body.minDuration)) !== null && _a !== void 0 ? _a : 0.8);
+        const maxDurationRaw = parseNumber(body === null || body === void 0 ? void 0 : body.maxDuration);
+        const maxDuration = Math.max(minDuration, maxDurationRaw !== null && maxDurationRaw !== void 0 ? maxDurationRaw : 4.0);
+        const thresholdRaw = parseNumber(body === null || body === void 0 ? void 0 : body.threshold);
+        const threshold = thresholdRaw !== undefined ? thresholdRaw : 18;
+        const maxClipsRaw = parseNumber(body === null || body === void 0 ? void 0 : body.maxClipsPerVideo);
+        const maxClips = maxClipsRaw !== undefined && maxClipsRaw > 0 ? Math.floor(maxClipsRaw) : undefined;
+        const padding = Math.max(0, (_b = parseNumber(body === null || body === void 0 ? void 0 : body.scenePadding)) !== null && _b !== void 0 ? _b : 0.25);
+        const gap = Math.max(0, (_c = parseNumber(body === null || body === void 0 ? void 0 : body.minGapBetweenClips)) !== null && _c !== void 0 ? _c : 0.4);
+        const methodRaw = typeof (body === null || body === void 0 ? void 0 : body.detectionMethod) === 'string'
+            ? body.detectionMethod.trim().toLowerCase()
+            : undefined;
+        let detectionMethod;
+        if (methodRaw && ['auto', 'pyscenedetect', 'ffmpeg'].includes(methodRaw)) {
+            detectionMethod = methodRaw;
+        }
+        const sceneOptions = {
+            minDuration,
+            maxDuration,
+            threshold,
+            scenePadding: padding,
+            minGapBetweenClips: gap
+        };
+        if (maxClips !== undefined) {
+            sceneOptions.maxClipsPerVideo = maxClips;
+        }
+        if (detectionMethod) {
+            sceneOptions.detectionMethod = detectionMethod;
+        }
+        if ((body === null || body === void 0 ? void 0 : body.useFFmpeg) || (body === null || body === void 0 ? void 0 : body.useFFmpegDetection)) {
+            sceneOptions.detectionMethod = 'ffmpeg';
+            sceneOptions.useFFmpegDetection = true;
+        }
+        else if ((body === null || body === void 0 ? void 0 : body.useFFmpeg) === false || (body === null || body === void 0 ? void 0 : body.useFFmpegDetection) === false) {
+            sceneOptions.useFFmpegDetection = false;
+        }
+        return sceneOptions;
+    }
     handlePostGenerateClips(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const { videoPath, minDuration, maxDuration, threshold } = req.body;
-                if (!videoPath) {
+                const { videoPath } = req.body;
+                if (!videoPath || (typeof videoPath !== 'string' && typeof videoPath !== 'number')) {
                     res.status(400).json({ error: 'Se requiere la ruta del video' });
                     return;
                 }
-                const sceneOptions = {
-                    minDuration: minDuration || 1.0,
-                    maxDuration: maxDuration || 3.0,
-                    threshold: threshold || 30
-                };
-                // Se usa siempre PySceneDetect con fallback a FFmpeg
-                const clipPaths = yield this.clipGenerator.detectScenesAndGenerateClips(videoPath, sceneOptions);
+                const sanitizedVideoPath = String(videoPath).trim();
+                if (!sanitizedVideoPath) {
+                    res.status(400).json({ error: 'Se requiere la ruta del video' });
+                    return;
+                }
+                const sceneOptions = this.parseSceneOptions(req.body);
+                const clipPaths = yield this.clipGenerator.generateClipsForVideo(sanitizedVideoPath, sceneOptions);
                 const clipInfos = yield Promise.all(clipPaths.map((p) => __awaiter(this, void 0, void 0, function* () {
                     let duration = 0;
                     try {
@@ -292,7 +342,7 @@ class SakugaDownAndClipGen {
                     }
                     return { path: p.replace(/\\/g, '/'), duration };
                 })));
-                res.json({ success: true, clipPaths, clipInfos });
+                res.json({ success: true, clipPaths, clipInfos, sceneOptions });
             }
             catch (error) {
                 res.status(500).json({ error: error.message });
@@ -302,72 +352,60 @@ class SakugaDownAndClipGen {
     handlePostGenerateClipsFromFolder(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const { folderPath = '', minDuration, maxDuration, threshold, useFFmpeg } = req.body;
+                const { folderPath = '' } = req.body;
                 if (folderPath === undefined) {
                     res.status(400).json({ error: 'Se requiere la ruta de la carpeta' });
                     return;
                 }
-                // Determinar la ruta completa del directorio
+                const sceneOptions = this.parseSceneOptions(req.body);
                 let videosDirectory;
                 if (folderPath === '') {
-                    // Si no se especifica una carpeta, usar el directorio de descargas completo
                     videosDirectory = this.downloadDirectory;
                 }
                 else {
-                    // Si se especifica una carpeta, construir la ruta
-                    videosDirectory = path.join(this.downloadDirectory, folderPath);
+                    videosDirectory = path.join(this.downloadDirectory, String(folderPath));
                 }
                 if (!fs.existsSync(videosDirectory)) {
                     res.status(404).json({ error: `La carpeta ${folderPath} no existe` });
                     return;
                 }
-                // Crear un mock request y response para reutilizar handlePostGenerateClips
                 const results = [];
                 const processDirectory = (dirPath) => __awaiter(this, void 0, void 0, function* () {
                     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
                     for (const entry of entries) {
                         const fullPath = path.join(dirPath, entry.name);
                         if (entry.isDirectory()) {
-                            // Procesar subdirectorios recursivamente
                             yield processDirectory(fullPath);
                         }
                         else if (entry.isFile() && /\.(mp4|webm|mkv)$/i.test(entry.name)) {
-                            // Crear un mock request para cada video
-                            const mockReq = {
-                                body: {
-                                    videoPath: fullPath,
-                                    minDuration,
-                                    maxDuration,
-                                    threshold,
-                                    useFFmpeg
-                                }
-                            };
-                            // Crear un mock response para capturar el resultado
-                            let responseData;
-                            const mockRes = {
-                                json: (data) => {
-                                    responseData = data;
-                                    return mockRes;
-                                },
-                                status: (code) => mockRes
-                            };
-                            // Procesar el video usando handlePostGenerateClips
-                            yield this.handlePostGenerateClips(mockReq, mockRes);
-                            if (responseData && responseData.success) {
+                            try {
+                                const clipPaths = yield this.clipGenerator.generateClipsForVideo(fullPath, sceneOptions);
+                                const clipInfos = yield Promise.all(clipPaths.map((clipPath) => __awaiter(this, void 0, void 0, function* () {
+                                    let duration = 0;
+                                    try {
+                                        duration = yield this.getVideoDurationFFprobe(clipPath);
+                                    }
+                                    catch (infoError) {
+                                        console.warn(`No se pudo obtener la duración de ${clipPath}:`, infoError);
+                                    }
+                                    return { path: clipPath.replace(/\\/g, '/'), duration };
+                                })));
                                 results.push({
                                     videoPath: fullPath.replace(/\\/g, '/'),
-                                    clipPaths: responseData.clipPaths.map((p) => p.replace(/\\/g, '/')),
-                                    clipInfos: responseData.clipInfos.map((c) => ({ path: c.path.replace(/\\/g, '/'), duration: c.duration }))
+                                    clipPaths: clipPaths.map(p => p.replace(/\\/g, '/')),
+                                    clipInfos
                                 });
+                            }
+                            catch (videoError) {
+                                console.error(`Error generando clips para ${fullPath}:`, videoError);
                             }
                         }
                     }
                 });
                 yield processDirectory(videosDirectory);
-                // Notificar la actualización de la lista de clips
                 const clips = (yield this.getDirectoryContentsWithDuration(this.clipDirectory)).filter(item => item.type === 'video');
                 this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
-                res.json({ success: true, results });
+                res.json({ success: true, results, sceneOptions });
             }
             catch (error) {
                 console.error('Error en la generación de clips desde carpeta:', error);
@@ -378,17 +416,12 @@ class SakugaDownAndClipGen {
     handlePostDownloadAndClip(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const { url, tags, minDuration, maxDuration, threshold, useFFmpeg } = req.body;
+                const { url, tags } = req.body;
                 if (!url && (!tags || !Array.isArray(tags) || tags.length === 0)) {
                     res.status(400).json({ error: 'Se requiere una URL o etiquetas válidas' });
                     return;
                 }
-                const sceneOptions = {
-                    minDuration: minDuration || 1.0,
-                    maxDuration: maxDuration || 3.0,
-                    threshold: threshold || (useFFmpeg ? 0.3 : 30),
-                    useFFmpegDetection: useFFmpeg || false
-                };
+                const sceneOptions = this.parseSceneOptions(req.body);
                 let results;
                 if (url) {
                     console.log(`Procesando URL: ${url}`);
@@ -397,7 +430,7 @@ class SakugaDownAndClipGen {
                         results = yield this.downloadTagsAndGenerateClips([tagName], sceneOptions);
                     }
                     else {
-                        const clipPaths = yield this.downloadAndGenerateClips(url, []);
+                        const clipPaths = yield this.downloadAndGenerateClips(String(url), [], sceneOptions);
                         results = new Map();
                         results.set(url, clipPaths);
                     }
@@ -406,12 +439,11 @@ class SakugaDownAndClipGen {
                     console.log(`Procesando etiquetas: ${tags.join(', ')}`);
                     results = yield this.downloadTagsAndGenerateClips(tags, sceneOptions);
                 }
-                // Convertir el Map a un objeto para la respuesta JSON
                 const resultsObject = {};
                 results.forEach((clips, video) => {
                     resultsObject[video] = clips;
                 });
-                res.json({ success: true, results: resultsObject });
+                res.json({ success: true, results: resultsObject, sceneOptions });
             }
             catch (error) {
                 res.status(500).json({ error: error.message });
@@ -568,12 +600,12 @@ class SakugaDownAndClipGen {
                 // Construir la ruta completa al archivo
                 const fullPath = path.join(this.clipDirectory, clipPath);
                 console.log(`Intentando eliminar clip: ${fullPath}`);
-                // Verificar que el archivo existe y que esté dentro del directorio de clips (seguridad)
+                // Verificar que el archivo existe y que estÃ© dentro del directorio de clips (seguridad)
                 if (!fs.existsSync(fullPath)) {
                     res.status(404).json({ error: 'Clip no encontrado' });
                     return;
                 }
-                // Comprobar que la ruta está dentro del directorio de clips permitido
+                // Comprobar que la ruta estÃ¡ dentro del directorio de clips permitido
                 const normalizedClipDir = path.normalize(this.clipDirectory);
                 const normalizedFullPath = path.normalize(fullPath);
                 if (!normalizedFullPath.startsWith(normalizedClipDir)) {
@@ -583,17 +615,17 @@ class SakugaDownAndClipGen {
                 // Eliminar el archivo
                 fs.unlinkSync(fullPath);
                 console.log(`Clip eliminado: ${clipPath}`);
-                // Verificar si la carpeta del clip está vacía y eliminarla si lo está
+                // Verificar si la carpeta del clip estÃ¡ vacÃ­a y eliminarla si lo estÃ¡
                 const clipDir = path.dirname(fullPath);
                 const remainingFiles = fs.readdirSync(clipDir);
                 // Check if the directory is empty and is not the main clip directory
                 if (remainingFiles.length === 0 && clipDir !== this.clipDirectory) {
                     try {
                         fs.rmdirSync(clipDir);
-                        console.log(`Carpeta vacía eliminada: ${clipDir}`);
+                        console.log(`Carpeta vacÃ­a eliminada: ${clipDir}`);
                     }
                     catch (rmDirError) {
-                        console.warn(`No se pudo eliminar la carpeta vacía: ${clipDir}`, rmDirError);
+                        console.warn(`No se pudo eliminar la carpeta vacÃ­a: ${clipDir}`, rmDirError);
                     }
                 }
                 // Actualizar la lista de clips y notificar a los clientes
@@ -673,10 +705,10 @@ class SakugaDownAndClipGen {
                     if (remaining.length === 0) {
                         try {
                             fs.rmdirSync(videoDir);
-                            console.log(`Carpeta vacía eliminada: ${videoDir}`);
+                            console.log(`Carpeta vacÃ­a eliminada: ${videoDir}`);
                         }
                         catch (e) {
-                            console.warn(`No se pudo eliminar la carpeta vacía: ${videoDir}`, e);
+                            console.warn(`No se pudo eliminar la carpeta vacÃ­a: ${videoDir}`, e);
                         }
                     }
                 }
@@ -705,7 +737,7 @@ class SakugaDownAndClipGen {
         });
     }
     /**
-     * Obtiene los videos de una carpeta específica
+     * Obtiene los videos de una carpeta especÃ­fica
      */
     handleGetFolderVideos(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -799,7 +831,7 @@ class SakugaDownAndClipGen {
         return contents;
     }
     /**
-     * Obtiene la duración de un video utilizando FFprobe
+     * Obtiene la duraciÃ³n de un video utilizando FFprobe
      */
     getVideoDurationFFprobe(videoPath) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -842,7 +874,7 @@ class SakugaDownAndClipGen {
         });
     }
     /**
-     * Obtiene el contenido de un directorio e incluye la duración de los videos
+     * Obtiene el contenido de un directorio e incluye la duraciÃ³n de los videos
      */
     getDirectoryContentsWithDuration(directory_1) {
         return __awaiter(this, arguments, void 0, function* (directory, baseFolder = '') {
@@ -877,7 +909,7 @@ class SakugaDownAndClipGen {
                             duration = yield this.getVideoDurationFFprobe(fullPath);
                         }
                         catch (e) {
-                            console.warn(`No se pudo obtener la duración de ${fullPath}:`, e);
+                            console.warn(`No se pudo obtener la duraciÃ³n de ${fullPath}:`, e);
                         }
                         contents.push({
                             name: entry.name,
@@ -894,22 +926,19 @@ class SakugaDownAndClipGen {
         });
     }
     /**
-     * Descarga un video y luego genera clips basados en segmentos de tiempo específicos
+     * Descarga un video y luego genera clips basados en segmentos de tiempo especÃ­ficos
      * @param videoUrl URL del video a descargar
      * @param timeSegments Segmentos de tiempo [inicio, fin] en segundos
      * @returns Rutas de los clips generados
      */
-    downloadAndGenerateClips(videoUrl, timeSegments) {
-        return __awaiter(this, void 0, void 0, function* () {
+    downloadAndGenerateClips(videoUrl_1, timeSegments_1) {
+        return __awaiter(this, arguments, void 0, function* (videoUrl, timeSegments, sceneOptions = {}) {
             try {
-                // 1. Descargar el video
                 console.log(`Descargando video desde: ${videoUrl}`);
                 const videoPath = yield this.downloader.downloadVideo(videoUrl);
-                // 2. Generar clips del video descargado
                 console.log(`Generando clips del video descargado: ${videoPath}`);
-                // Si no se proporcionan segmentos, detectar escenas automáticamente
                 if (timeSegments.length === 0) {
-                    return yield this.clipGenerator.detectScenesAndGenerateClips(videoPath);
+                    return yield this.clipGenerator.generateClipsForVideo(videoPath, sceneOptions);
                 }
                 const clipPaths = yield this.clipGenerator.generateMultipleClips(videoPath, timeSegments);
                 return clipPaths;
@@ -921,32 +950,31 @@ class SakugaDownAndClipGen {
         });
     }
     /**
-     * Descarga videos basados en etiquetas desde Sakugabooru y genera clips automáticamente
+     * Descarga videos basados en etiquetas desde Sakugabooru y genera clips automÃ¡ticamente
      * @param tags Etiquetas para buscar en Sakugabooru
-     * @param sceneOptions Opciones para la detección de escenas
+     * @param sceneOptions Opciones para la detecciÃ³n de escenas
      * @returns Mapa de rutas de video a rutas de clips generados
      */
     downloadTagsAndGenerateClips(tags_1) {
         return __awaiter(this, arguments, void 0, function* (tags, sceneOptions = {}) {
             const resultsMap = new Map();
+            const normalizedOptions = Object.assign({}, sceneOptions);
+            if (normalizedOptions.useFFmpegDetection && !normalizedOptions.detectionMethod) {
+                normalizedOptions.detectionMethod = 'ffmpeg';
+            }
             for (const tag of tags) {
                 try {
                     console.log(`Procesando etiqueta: ${tag}`);
                     const tagUrl = `${this.downloader['baseUrl']}/post?tags=${tag}`;
-                    // Descargar videos para esta etiqueta
                     const videoPaths = yield this.downloader.downloadVideosFromTag(tagUrl);
-                    // Para cada video descargado, generar clips
                     for (const videoPath of videoPaths) {
-                        let clipPaths;
-                        if (sceneOptions.useFFmpegDetection) {
-                            // Usar FFmpeg para detección de escenas
-                            clipPaths = yield this.clipGenerator.detectScenesWithFFmpegAndGenerateClips(videoPath, sceneOptions);
+                        try {
+                            const clipPaths = yield this.clipGenerator.generateClipsForVideo(videoPath, normalizedOptions);
+                            resultsMap.set(videoPath, clipPaths);
                         }
-                        else {
-                            // Usar PySceneDetect para detección de escenas
-                            clipPaths = yield this.clipGenerator.detectScenesAndGenerateClips(videoPath, sceneOptions);
+                        catch (clipError) {
+                            console.error(`Error generando clips para ${videoPath}:`, clipError);
                         }
-                        resultsMap.set(videoPath, clipPaths);
                     }
                 }
                 catch (error) {
@@ -956,12 +984,6 @@ class SakugaDownAndClipGen {
             return resultsMap;
         });
     }
-    /**
-     * Procesa un archivo de etiquetas para descargar videos y generar clips
-     * @param tagsFilePath Ruta al archivo de etiquetas (separadas por punto y coma)
-     * @param sceneOptions Opciones para la detección de escenas
-     * @returns Mapa de rutas de video a rutas de clips generados
-     */
     processTagsFileAndGenerateClips(tagsFilePath_1) {
         return __awaiter(this, arguments, void 0, function* (tagsFilePath, sceneOptions = {}) {
             try {
@@ -970,7 +992,7 @@ class SakugaDownAndClipGen {
                 }
                 const content = fs.readFileSync(tagsFilePath, 'utf-8').trim();
                 if (!content) {
-                    throw new Error("El archivo de etiquetas está vacío");
+                    throw new Error('El archivo de etiquetas está vacío');
                 }
                 const tags = content.split(';')
                     .map(tag => tag.trim())
@@ -978,67 +1000,59 @@ class SakugaDownAndClipGen {
                 return yield this.downloadTagsAndGenerateClips(tags, sceneOptions);
             }
             catch (error) {
-                console.error(`Error procesando archivo de etiquetas:`, error);
+                console.error('Error procesando archivo de etiquetas:', error);
                 throw error;
             }
         });
     }
-    /**
-     * Procesa videos ya descargados y genera clips
-     * @param videosDirectory Directorio que contiene videos ya descargados
-     * @param sceneOptions Opciones para la detección de escenas
-     * @returns Mapa de rutas de video a rutas de clips generados
-     */
     processVideosDirectoryAndGenerateClips(videosDirectory_1) {
-        return __awaiter(this, arguments, void 0, function* (videosDirectory, // This parameter is the base directory containing video files or subfolders with videos
-        sceneOptions = {}) {
-            const resultsMap = new Map(); // Initialize a map to store results
+        return __awaiter(this, arguments, void 0, function* (videosDirectory, sceneOptions = {}) {
+            const resultsMap = new Map();
             try {
-                // Check if the provided directory exists
                 if (!fs.existsSync(videosDirectory)) {
                     console.error(`Error: Videos directory does not exist at ${videosDirectory}`);
                     throw new Error(`El directorio de videos no existe: ${videosDirectory}`);
                 }
-                // Recursive function to process files and subdirectories
+                const normalizedOptions = Object.assign({}, sceneOptions);
+                if (normalizedOptions.useFFmpegDetection && !normalizedOptions.detectionMethod) {
+                    normalizedOptions.detectionMethod = 'ffmpeg';
+                }
                 const processDirectory = (currentDirPath) => __awaiter(this, void 0, void 0, function* () {
                     const entries = fs.readdirSync(currentDirPath, { withFileTypes: true });
                     for (const entry of entries) {
                         const fullPath = path.join(currentDirPath, entry.name);
                         if (entry.isDirectory()) {
-                            // If entry is a directory, recurse into it
                             console.log(`Scanning subdirectory: ${fullPath}`);
                             yield processDirectory(fullPath);
                         }
                         else if (entry.isFile() && /\.(mp4|webm|mkv)$/i.test(entry.name)) {
-                            // If entry is a supported video file, process it
                             console.log(`Procesando video: ${fullPath}`);
                             this.io.emit('clipGenerationStatus', { video: fullPath, status: 'processing' });
-                            let clipPaths; // Array to hold paths of generated clips
-                            // Choose scene detection method based on sceneOptions
-                            if (sceneOptions.useFFmpegDetection) {
-                                clipPaths = yield this.clipGenerator.detectScenesWithFFmpegAndGenerateClips(fullPath, sceneOptions);
+                            try {
+                                const clipPaths = yield this.clipGenerator.generateClipsForVideo(fullPath, normalizedOptions);
+                                this.io.emit('clipGenerationStatus', { video: fullPath, status: 'completed', clips: clipPaths.length });
+                                resultsMap.set(fullPath, clipPaths);
                             }
-                            else {
-                                clipPaths = yield this.clipGenerator.detectScenesAndGenerateClips(fullPath, sceneOptions);
+                            catch (clipError) {
+                                console.error(`Error generando clips para ${fullPath}:`, clipError);
+                                this.io.emit('clipGenerationError', { video: fullPath, error: clipError.message });
                             }
-                            this.io.emit('clipGenerationStatus', { video: fullPath, status: 'completed', clips: clipPaths.length });
-                            resultsMap.set(fullPath, clipPaths); // Store the result in the map
                         }
                     }
                 });
-                yield processDirectory(videosDirectory); // Start processing from the root videosDirectory
+                yield processDirectory(videosDirectory);
             }
             catch (error) {
                 console.error(`Error procesando directorio de videos: ${videosDirectory}`, error);
                 this.io.emit('clipGenerationError', { directory: videosDirectory, error: error.message });
-                throw error; // Re-throw the error to be handled by the caller
+                throw error;
             }
-            // Notificar la actualización de la lista de clips
             const clips = (yield this.getDirectoryContentsWithDuration(this.clipDirectory)).filter(item => item.type === 'video');
             this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
-            return resultsMap; // Return the map of results
+            return resultsMap;
         });
-    } /**
+    }
+    /**
      * Handles audio analysis requests
      */
     handlePostAudioAnalyze(req, res) {
