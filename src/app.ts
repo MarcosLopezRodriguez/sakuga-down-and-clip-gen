@@ -6,6 +6,7 @@ import { AudioAnalyzer } from './audioAnalyzer';
 import { BeatSyncGenerator } from './beatSyncGenerator';
 import * as path from 'path';
 import * as fs from 'fs';
+const fsp = fs.promises;
 import http from 'http';
 import { Server, Socket } from 'socket.io';
 import { spawn } from 'child_process';
@@ -380,7 +381,6 @@ export class SakugaDownAndClipGen {
         }
     }
 
-
     private async handlePostGenerateClipsFromFolder(req: express.Request, res: express.Response): Promise<void> {
         try {
             const { folderPath = '' } = req.body;
@@ -405,39 +405,39 @@ export class SakugaDownAndClipGen {
 
             const results: Array<{ videoPath: string; clipPaths: string[]; clipInfos: { path: string; duration: number }[] }> = [];
 
-            const processDirectory = async (dirPath: string) => {
-                const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-
-                for (const entry of entries) {
-                    const fullPath = path.join(dirPath, entry.name);
-
-                    if (entry.isDirectory()) {
-                        await processDirectory(fullPath);
-                    } else if (entry.isFile() && /\.(mp4|webm|mkv)$/i.test(entry.name)) {
-                        try {
-                            const clipPaths = await this.clipGenerator.generateClipsForVideo(fullPath, sceneOptions);
-
-                            const clipInfos = await Promise.all(
-                                clipPaths.map(async (clipPath) => {
-                                    let duration = 0;
-                                    try {
-                                        duration = await this.getVideoDurationFFprobe(clipPath);
-                                    } catch (infoError) {
-                                        console.warn(`No se pudo obtener la duración de ${clipPath}:`, infoError);
-                                    }
-                                    return { path: clipPath.replace(/\\/g, '/'), duration };
-                                })
-                            );
-
-                            results.push({
-                                videoPath: fullPath.replace(/\\/g, '/'),
-                                clipPaths: clipPaths.map(p => p.replace(/\\/g, '/')),
-                                clipInfos
-                            });
-                        } catch (videoError) {
-                            console.error(`Error generando clips para ${fullPath}:`, videoError);
+            const processDirectory = async (dirPath: string): Promise<void> => {
+                const dirHandle = await fsp.opendir(dirPath);
+                try {
+                    for await (const entry of dirHandle) {
+                        const fullPath = path.join(dirPath, entry.name);
+                        if (entry.isDirectory()) {
+                            await processDirectory(fullPath);
+                        } else if (entry.isFile() && /\.(mp4|webm|mkv)$/i.test(entry.name)) {
+                            try {
+                                const clipPaths = await this.clipGenerator.generateClipsForVideo(fullPath, sceneOptions);
+                                const clipInfos = await Promise.all(
+                                    clipPaths.map(async (clipPath) => {
+                                        let duration = 0;
+                                        try {
+                                            duration = await this.getVideoDurationFFprobe(clipPath);
+                                        } catch (infoError) {
+                                            console.warn(`No se pudo obtener la duracion de ${clipPath}:`, infoError);
+                                        }
+                                        return { path: clipPath.replace(/\\/g, '/'), duration };
+                                    })
+                                );
+                                results.push({
+                                    videoPath: fullPath.replace(/\\/g, '/'),
+                                    clipPaths: clipPaths.map(p => p.replace(/\\/g, '/')),
+                                    clipInfos
+                                });
+                            } catch (videoError) {
+                                console.error(`Error generando clips para ${fullPath}:`, videoError);
+                            }
                         }
                     }
+                } finally {
+                    await dirHandle.close().catch(() => undefined);
                 }
             };
 
@@ -452,7 +452,6 @@ export class SakugaDownAndClipGen {
             res.status(500).json({ error: error.message });
         }
     }
-
 
     private async handlePostDownloadAndClip(req: express.Request, res: express.Response): Promise<void> {
         try {
@@ -492,7 +491,6 @@ export class SakugaDownAndClipGen {
             res.status(500).json({ error: error.message });
         }
     }
-
 
     // Handler for listing subfolders in the clip directory
     private handleListClipFolders(req: express.Request, res: express.Response): void {
@@ -617,13 +615,6 @@ export class SakugaDownAndClipGen {
         pythonProcess.stderr.on('data', (data) => {
             stderrData += data.toString();
         });
-
-
-
-
-
-
-
 
         pythonProcess.on('close', (code) => {
             console.log(`Python script stdout:\n${stdoutData}`);
@@ -986,43 +977,40 @@ export class SakugaDownAndClipGen {
             return contents;
         }
 
-        const processDirectory = async (dir: string, relativePath: string = '') => {
-            const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-            for (const entry of entries) {
-                const fullPath = path.join(dir, entry.name);
-                let entryRelativePath: string;
-
-                if (baseFolder) {
-                    entryRelativePath = path.join(baseFolder, relativePath, entry.name);
-                } else {
-                    entryRelativePath = relativePath ? path.join(relativePath, entry.name) : entry.name;
-                }
-
-                if (entry.isDirectory()) {
-                    contents.push({
-                        name: entry.name,
-                        path: entryRelativePath,
-                        type: 'directory',
-                        size: 0
-                    });
-                    await processDirectory(fullPath, path.join(relativePath, entry.name));
-                } else if (entry.isFile() && /\.(mp4|webm|mkv)$/i.test(entry.name)) {
-                    const stats = fs.statSync(fullPath);
-                    let duration = 0;
-                    try {
-                        duration = await this.getVideoDurationFFprobe(fullPath);
-                    } catch (e) {
-                        console.warn(`No se pudo obtener la duraciÃ³n de ${fullPath}:`, e);
+        const processDirectory = async (dir: string, relativePath: string = ''): Promise<void> => {
+            const dirHandle = await fsp.opendir(dir);
+            try {
+                for await (const entry of dirHandle) {
+                    const fullPath = path.join(dir, entry.name);
+                    const relativeToBase = relativePath ? path.join(relativePath, entry.name) : entry.name;
+                    const entryRelativePath = baseFolder ? path.join(baseFolder, relativeToBase) : relativeToBase;
+                    if (entry.isDirectory()) {
+                        contents.push({
+                            name: entry.name,
+                            path: entryRelativePath,
+                            type: 'directory',
+                            size: 0
+                        });
+                        await processDirectory(fullPath, relativeToBase);
+                    } else if (entry.isFile() && /\.(mp4|webm|mkv)$/i.test(entry.name)) {
+                        const stats = await fsp.stat(fullPath);
+                        let duration = 0;
+                        try {
+                            duration = await this.getVideoDurationFFprobe(fullPath);
+                        } catch (e) {
+                            console.warn(`No se pudo obtener la duracion de ${fullPath}:`, e);
+                        }
+                        contents.push({
+                            name: entry.name,
+                            path: entryRelativePath,
+                            type: 'video',
+                            size: stats.size,
+                            duration
+                        });
                     }
-                    contents.push({
-                        name: entry.name,
-                        path: entryRelativePath,
-                        type: 'video',
-                        size: stats.size,
-                        duration
-                    });
                 }
+            } finally {
+                await dirHandle.close().catch(() => undefined);
             }
         };
 
@@ -1058,7 +1046,6 @@ export class SakugaDownAndClipGen {
             throw error;
         }
     }
-
 
     /**
      * Descarga videos basados en etiquetas desde Sakugabooru y genera clips automÃ¡ticamente
@@ -1287,3 +1274,4 @@ export class SakugaDownAndClipGen {
 }
 
 export default SakugaDownAndClipGen;
+

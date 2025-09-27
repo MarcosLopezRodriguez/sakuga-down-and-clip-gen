@@ -41,6 +41,13 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __asyncValues = (this && this.__asyncValues) || function (o) {
+    if (!Symbol.asyncIterator) throw new TypeError("Symbol.asyncIterator is not defined.");
+    var m = o[Symbol.asyncIterator], i;
+    return m ? m.call(o) : (o = typeof __values === "function" ? __values(o) : o[Symbol.iterator](), i = {}, verb("next"), verb("throw"), verb("return"), i[Symbol.asyncIterator] = function () { return this; }, i);
+    function verb(n) { i[n] = o[n] && function (v) { return new Promise(function (resolve, reject) { v = o[n](v), settle(resolve, reject, v.done, v.value); }); }; }
+    function settle(resolve, reject, d, v) { Promise.resolve(v).then(function(v) { resolve({ value: v, done: d }); }, reject); }
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -54,6 +61,7 @@ const audioAnalyzer_1 = require("./audioAnalyzer");
 const beatSyncGenerator_1 = require("./beatSyncGenerator");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
+const fsp = fs.promises;
 const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
 const child_process_1 = require("child_process");
@@ -371,35 +379,53 @@ class SakugaDownAndClipGen {
                 }
                 const results = [];
                 const processDirectory = (dirPath) => __awaiter(this, void 0, void 0, function* () {
-                    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-                    for (const entry of entries) {
-                        const fullPath = path.join(dirPath, entry.name);
-                        if (entry.isDirectory()) {
-                            yield processDirectory(fullPath);
-                        }
-                        else if (entry.isFile() && /\.(mp4|webm|mkv)$/i.test(entry.name)) {
-                            try {
-                                const clipPaths = yield this.clipGenerator.generateClipsForVideo(fullPath, sceneOptions);
-                                const clipInfos = yield Promise.all(clipPaths.map((clipPath) => __awaiter(this, void 0, void 0, function* () {
-                                    let duration = 0;
+                    var _a, e_1, _b, _c;
+                    const dirHandle = yield fsp.opendir(dirPath);
+                    try {
+                        try {
+                            for (var _d = true, dirHandle_1 = __asyncValues(dirHandle), dirHandle_1_1; dirHandle_1_1 = yield dirHandle_1.next(), _a = dirHandle_1_1.done, !_a; _d = true) {
+                                _c = dirHandle_1_1.value;
+                                _d = false;
+                                const entry = _c;
+                                const fullPath = path.join(dirPath, entry.name);
+                                if (entry.isDirectory()) {
+                                    yield processDirectory(fullPath);
+                                }
+                                else if (entry.isFile() && /\.(mp4|webm|mkv)$/i.test(entry.name)) {
                                     try {
-                                        duration = yield this.getVideoDurationFFprobe(clipPath);
+                                        const clipPaths = yield this.clipGenerator.generateClipsForVideo(fullPath, sceneOptions);
+                                        const clipInfos = yield Promise.all(clipPaths.map((clipPath) => __awaiter(this, void 0, void 0, function* () {
+                                            let duration = 0;
+                                            try {
+                                                duration = yield this.getVideoDurationFFprobe(clipPath);
+                                            }
+                                            catch (infoError) {
+                                                console.warn(`No se pudo obtener la duracion de ${clipPath}:`, infoError);
+                                            }
+                                            return { path: clipPath.replace(/\\/g, '/'), duration };
+                                        })));
+                                        results.push({
+                                            videoPath: fullPath.replace(/\\/g, '/'),
+                                            clipPaths: clipPaths.map(p => p.replace(/\\/g, '/')),
+                                            clipInfos
+                                        });
                                     }
-                                    catch (infoError) {
-                                        console.warn(`No se pudo obtener la duración de ${clipPath}:`, infoError);
+                                    catch (videoError) {
+                                        console.error(`Error generando clips para ${fullPath}:`, videoError);
                                     }
-                                    return { path: clipPath.replace(/\\/g, '/'), duration };
-                                })));
-                                results.push({
-                                    videoPath: fullPath.replace(/\\/g, '/'),
-                                    clipPaths: clipPaths.map(p => p.replace(/\\/g, '/')),
-                                    clipInfos
-                                });
-                            }
-                            catch (videoError) {
-                                console.error(`Error generando clips para ${fullPath}:`, videoError);
+                                }
                             }
                         }
+                        catch (e_1_1) { e_1 = { error: e_1_1 }; }
+                        finally {
+                            try {
+                                if (!_d && !_a && (_b = dirHandle_1.return)) yield _b.call(dirHandle_1);
+                            }
+                            finally { if (e_1) throw e_1.error; }
+                        }
+                    }
+                    finally {
+                        yield dirHandle.close().catch(() => undefined);
                     }
                 });
                 yield processDirectory(videosDirectory);
@@ -883,42 +909,55 @@ class SakugaDownAndClipGen {
                 return contents;
             }
             const processDirectory = (dir_1, ...args_1) => __awaiter(this, [dir_1, ...args_1], void 0, function* (dir, relativePath = '') {
-                const entries = fs.readdirSync(dir, { withFileTypes: true });
-                for (const entry of entries) {
-                    const fullPath = path.join(dir, entry.name);
-                    let entryRelativePath;
-                    if (baseFolder) {
-                        entryRelativePath = path.join(baseFolder, relativePath, entry.name);
+                var _a, e_2, _b, _c;
+                const dirHandle = yield fsp.opendir(dir);
+                try {
+                    try {
+                        for (var _d = true, dirHandle_2 = __asyncValues(dirHandle), dirHandle_2_1; dirHandle_2_1 = yield dirHandle_2.next(), _a = dirHandle_2_1.done, !_a; _d = true) {
+                            _c = dirHandle_2_1.value;
+                            _d = false;
+                            const entry = _c;
+                            const fullPath = path.join(dir, entry.name);
+                            const relativeToBase = relativePath ? path.join(relativePath, entry.name) : entry.name;
+                            const entryRelativePath = baseFolder ? path.join(baseFolder, relativeToBase) : relativeToBase;
+                            if (entry.isDirectory()) {
+                                contents.push({
+                                    name: entry.name,
+                                    path: entryRelativePath,
+                                    type: 'directory',
+                                    size: 0
+                                });
+                                yield processDirectory(fullPath, relativeToBase);
+                            }
+                            else if (entry.isFile() && /\.(mp4|webm|mkv)$/i.test(entry.name)) {
+                                const stats = yield fsp.stat(fullPath);
+                                let duration = 0;
+                                try {
+                                    duration = yield this.getVideoDurationFFprobe(fullPath);
+                                }
+                                catch (e) {
+                                    console.warn(`No se pudo obtener la duracion de ${fullPath}:`, e);
+                                }
+                                contents.push({
+                                    name: entry.name,
+                                    path: entryRelativePath,
+                                    type: 'video',
+                                    size: stats.size,
+                                    duration
+                                });
+                            }
+                        }
                     }
-                    else {
-                        entryRelativePath = relativePath ? path.join(relativePath, entry.name) : entry.name;
-                    }
-                    if (entry.isDirectory()) {
-                        contents.push({
-                            name: entry.name,
-                            path: entryRelativePath,
-                            type: 'directory',
-                            size: 0
-                        });
-                        yield processDirectory(fullPath, path.join(relativePath, entry.name));
-                    }
-                    else if (entry.isFile() && /\.(mp4|webm|mkv)$/i.test(entry.name)) {
-                        const stats = fs.statSync(fullPath);
-                        let duration = 0;
+                    catch (e_2_1) { e_2 = { error: e_2_1 }; }
+                    finally {
                         try {
-                            duration = yield this.getVideoDurationFFprobe(fullPath);
+                            if (!_d && !_a && (_b = dirHandle_2.return)) yield _b.call(dirHandle_2);
                         }
-                        catch (e) {
-                            console.warn(`No se pudo obtener la duraciÃ³n de ${fullPath}:`, e);
-                        }
-                        contents.push({
-                            name: entry.name,
-                            path: entryRelativePath,
-                            type: 'video',
-                            size: stats.size,
-                            duration
-                        });
+                        finally { if (e_2) throw e_2.error; }
                     }
+                }
+                finally {
+                    yield dirHandle.close().catch(() => undefined);
                 }
             });
             yield processDirectory(directory);
