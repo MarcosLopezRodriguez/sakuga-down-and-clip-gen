@@ -150,24 +150,24 @@ class ClipGenerator {
         sanitized.maxDuration = maxDuration;
         const threshold = typeof sanitized.threshold === 'number' && Number.isFinite(sanitized.threshold)
             ? sanitized.threshold
-            : 18;
+            : 8;
         sanitized.threshold = threshold;
         sanitized.scenePadding = typeof sanitized.scenePadding === 'number' && Number.isFinite(sanitized.scenePadding) && sanitized.scenePadding >= 0
             ? sanitized.scenePadding
-            : 0.25;
+            : 0.1;
         sanitized.minGapBetweenClips = typeof sanitized.minGapBetweenClips === 'number' && Number.isFinite(sanitized.minGapBetweenClips) && sanitized.minGapBetweenClips >= 0
             ? sanitized.minGapBetweenClips
-            : 0.4;
+            : 0.1;
         if (typeof sanitized.maxClipsPerVideo === 'number' && Number.isFinite(sanitized.maxClipsPerVideo)) {
             if (sanitized.maxClipsPerVideo <= 0) {
-                sanitized.maxClipsPerVideo = undefined;
+                delete sanitized.maxClipsPerVideo;
             }
             else {
                 sanitized.maxClipsPerVideo = Math.floor(sanitized.maxClipsPerVideo);
             }
         }
         else {
-            sanitized.maxClipsPerVideo = 6;
+            delete sanitized.maxClipsPerVideo;
         }
         if (sanitized.detectionMethod === 'ffmpeg') {
             sanitized.useFFmpegDetection = true;
@@ -176,7 +176,7 @@ class ClipGenerator {
     }
     getFfmpegSceneThreshold(options) {
         var _a;
-        const raw = (_a = options.threshold) !== null && _a !== void 0 ? _a : 18;
+        const raw = (_a = options.threshold) !== null && _a !== void 0 ? _a : 8;
         const normalized = raw > 1 ? raw / 100 : raw;
         if (!Number.isFinite(normalized) || normalized <= 0) {
             return 0.1;
@@ -287,63 +287,77 @@ class ClipGenerator {
                 return [];
             }
             const minDuration = Math.max(0, (_a = options.minDuration) !== null && _a !== void 0 ? _a : 0.8);
-            const padding = Math.max(0, (_b = options.scenePadding) !== null && _b !== void 0 ? _b : 0.25);
-            const minGap = Math.max(0, (_c = options.minGapBetweenClips) !== null && _c !== void 0 ? _c : 0.4);
+            const padding = Math.max(0, (_b = options.scenePadding) !== null && _b !== void 0 ? _b : 0.1);
+            const minGap = Math.max(0, (_c = options.minGapBetweenClips) !== null && _c !== void 0 ? _c : 0.1);
             const maxClips = options.maxClipsPerVideo && options.maxClipsPerVideo > 0
                 ? Math.floor(options.maxClipsPerVideo)
                 : 0;
             const videoDuration = typeof knownVideoDuration === 'number' && !Number.isNaN(knownVideoDuration)
                 ? knownVideoDuration
                 : yield this.getVideoDuration(videoPath);
-            const normalized = segments
-                .map(([start, end]) => {
+            const candidates = [];
+            for (const [start, end] of segments) {
                 if ((end - start) < minDuration) {
-                    return null;
+                    continue;
                 }
                 const paddedStart = Math.max(0, start - padding);
                 const paddedEnd = Math.min(videoDuration, end + padding);
                 if (paddedEnd - paddedStart <= 0.1) {
-                    return null;
+                    continue;
                 }
-                return [paddedStart, paddedEnd];
-            })
-                .filter((value) => Boolean(value));
-            if (!normalized.length) {
+                candidates.push({
+                    seg: [paddedStart, paddedEnd],
+                    raw: [start, end],
+                    duration: paddedEnd - paddedStart
+                });
+            }
+            if (!candidates.length) {
                 return [];
             }
-            let selection = normalized
-                .map(seg => ({ seg, duration: seg[1] - seg[0] }))
-                .filter(item => item.duration > 0.1);
+            let selection = candidates.filter(item => item.duration > 0.1);
             if (!selection.length) {
                 return [];
             }
             if (maxClips && selection.length > maxClips) {
-                selection.sort((a, b) => {
+                selection = [...selection]
+                    .sort((a, b) => {
                     if (b.duration === a.duration) {
                         return a.seg[0] - b.seg[0];
                     }
                     return b.duration - a.duration;
-                });
-                selection = selection.slice(0, maxClips);
+                })
+                    .slice(0, maxClips);
             }
             selection.sort((a, b) => a.seg[0] - b.seg[0]);
             const merged = [];
-            for (const { seg } of selection) {
+            for (const current of selection) {
                 if (!merged.length) {
-                    merged.push([...seg]);
+                    merged.push({
+                        seg: [...current.seg],
+                        raw: [...current.raw],
+                        duration: current.duration
+                    });
                     continue;
                 }
                 const last = merged[merged.length - 1];
-                if ((seg[0] - last[1]) < minGap) {
-                    last[1] = Math.min(videoDuration, Math.max(last[1], seg[1]));
+                const rawGap = current.raw[0] - last.raw[1];
+                const shouldMerge = rawGap < 0 || (rawGap > 0 && rawGap < minGap);
+                if (shouldMerge) {
+                    last.raw[1] = Math.max(last.raw[1], current.raw[1]);
+                    last.seg[0] = Math.min(last.seg[0], current.seg[0]);
+                    last.seg[1] = Math.min(videoDuration, Math.max(last.seg[1], current.seg[1]));
+                    last.duration = last.seg[1] - last.seg[0];
                 }
                 else {
-                    merged.push([...seg]);
+                    merged.push({
+                        seg: [...current.seg],
+                        raw: [...current.raw],
+                        duration: current.duration
+                    });
                 }
             }
             if (maxClips && merged.length > maxClips) {
-                return merged
-                    .map(seg => ({ seg, duration: seg[1] - seg[0] }))
+                const trimmed = [...merged]
                     .sort((a, b) => {
                     if (b.duration === a.duration) {
                         return a.seg[0] - b.seg[0];
@@ -351,10 +365,10 @@ class ClipGenerator {
                     return b.duration - a.duration;
                 })
                     .slice(0, maxClips)
-                    .map(item => item.seg)
-                    .sort((a, b) => a[0] - b[0]);
+                    .sort((a, b) => a.seg[0] - b.seg[0]);
+                return trimmed.map(item => item.seg);
             }
-            return merged;
+            return merged.map(item => item.seg);
         });
     }
     detectScenesAndGenerateClips(videoPath_1) {
@@ -363,7 +377,7 @@ class ClipGenerator {
             const sanitizedOptions = this.sanitizeSceneOptions(options);
             const minDuration = (_a = sanitizedOptions.minDuration) !== null && _a !== void 0 ? _a : 0.8;
             const maxDuration = (_b = sanitizedOptions.maxDuration) !== null && _b !== void 0 ? _b : Math.max(minDuration, 4.0);
-            const threshold = (_c = sanitizedOptions.threshold) !== null && _c !== void 0 ? _c : 18;
+            const threshold = (_c = sanitizedOptions.threshold) !== null && _c !== void 0 ? _c : 8;
             console.log(`Detecting scenes in ${videoPath}...`);
             console.log(`Options: minDuration=${minDuration}, maxDuration=${maxDuration}, threshold=${threshold}, maxClips=${(_d = sanitizedOptions.maxClipsPerVideo) !== null && _d !== void 0 ? _d : 'unlimited'}`);
             return new Promise((resolve, reject) => {
@@ -380,7 +394,7 @@ class ClipGenerator {
                     '--threshold', threshold.toString(),
                     'list-scenes',
                     '--output', tempDir,
-                    '--filename-format', `${videoBaseName}-Scenes.csv`
+                    '--filename', `${videoBaseName}-Scenes.csv`
                 ];
                 const sceneDetectProcess = (0, child_process_1.spawn)('python', args);
                 let stdoutData = '';
@@ -432,8 +446,7 @@ class ClipGenerator {
                                 }
                             }
                             else {
-                                console.warn(`Scene CSV not found at ${csvFile}, PySceneDetect output:
-${stdoutData}`);
+                                console.warn(`Scene CSV not found at ${csvFile}, PySceneDetect output:\n${stdoutData}`);
                             }
                             const videoDuration = yield this.getVideoDuration(videoPath);
                             const normalizedSegments = yield this.prepareSegments(videoPath, timeSegments, sanitizedOptions, videoDuration);
@@ -621,51 +634,6 @@ ${stdoutData}`);
         });
     }
     /**
-     * Obtiene la duración de un video en segundos
-     * @param videoPath Ruta al archivo de video
-     * @returns Promesa con la duración en segundos
-     */
-    getVideoDuration(videoPath) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return new Promise((resolve, reject) => {
-                // Usar FFprobe para obtener la duración del video
-                const args = [
-                    '-v', 'error',
-                    '-show_entries', 'format=duration',
-                    '-of', 'default=noprint_wrappers=1:nokey=1',
-                    videoPath
-                ];
-                const ffprobeProcess = (0, child_process_1.spawn)(this.ffprobePath, args);
-                let stdoutData = '';
-                let stderrData = '';
-                ffprobeProcess.stdout.on('data', (data) => {
-                    stdoutData += data.toString();
-                });
-                ffprobeProcess.stderr.on('data', (data) => {
-                    stderrData += data.toString();
-                });
-                ffprobeProcess.on('close', (code) => {
-                    if (code === 0) {
-                        const duration = parseFloat(stdoutData.trim());
-                        if (!isNaN(duration)) {
-                            resolve(duration);
-                        }
-                        else {
-                            reject(new Error('Could not parse video duration'));
-                        }
-                    }
-                    else {
-                        console.error('FFprobe stderr:', stderrData);
-                        reject(new Error(`FFprobe process exited with code ${code}`));
-                    }
-                });
-                ffprobeProcess.on('error', (err) => {
-                    reject(new Error(`Failed to start FFprobe process: ${err.message}`));
-                });
-            });
-        });
-    }
-    /**
      * Procesa un directorio completo de videos
      * @param directoryPath Ruta al directorio con videos
      * @param options Opciones de detección de escenas
@@ -817,6 +785,46 @@ ${stdoutData}`);
                 allClips.push(...clips);
             }
             return allClips;
+        });
+    }
+    getVideoDuration(videoPath) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve, reject) => {
+                // Usar FFprobe para obtener la duración del video
+                const args = [
+                    '-v', 'error',
+                    '-show_entries', 'format=duration',
+                    '-of', 'default=noprint_wrappers=1:nokey=1',
+                    videoPath
+                ];
+                const ffprobeProcess = (0, child_process_1.spawn)(this.ffprobePath, args);
+                let stdoutData = '';
+                let stderrData = '';
+                ffprobeProcess.stdout.on('data', (data) => {
+                    stdoutData += data.toString();
+                });
+                ffprobeProcess.stderr.on('data', (data) => {
+                    stderrData += data.toString();
+                });
+                ffprobeProcess.on('close', (code) => {
+                    if (code === 0) {
+                        const duration = parseFloat(stdoutData.trim());
+                        if (!isNaN(duration)) {
+                            resolve(duration);
+                        }
+                        else {
+                            reject(new Error('Could not parse video duration'));
+                        }
+                    }
+                    else {
+                        console.error('FFprobe stderr:', stderrData);
+                        reject(new Error(`FFprobe process exited with code ${code}`));
+                    }
+                });
+                ffprobeProcess.on('error', (err) => {
+                    reject(new Error(`Failed to start FFprobe process: ${err.message}`));
+                });
+            });
         });
     }
     /**

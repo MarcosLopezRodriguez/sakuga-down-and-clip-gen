@@ -283,11 +283,11 @@ class SakugaDownAndClipGen {
         const maxDurationRaw = parseNumber(body === null || body === void 0 ? void 0 : body.maxDuration);
         const maxDuration = Math.max(minDuration, maxDurationRaw !== null && maxDurationRaw !== void 0 ? maxDurationRaw : 4.0);
         const thresholdRaw = parseNumber(body === null || body === void 0 ? void 0 : body.threshold);
-        const threshold = thresholdRaw !== undefined ? thresholdRaw : 18;
+        const threshold = thresholdRaw !== undefined ? thresholdRaw : 8;
         const maxClipsRaw = parseNumber(body === null || body === void 0 ? void 0 : body.maxClipsPerVideo);
         const maxClips = maxClipsRaw !== undefined && maxClipsRaw > 0 ? Math.floor(maxClipsRaw) : undefined;
-        const padding = Math.max(0, (_b = parseNumber(body === null || body === void 0 ? void 0 : body.scenePadding)) !== null && _b !== void 0 ? _b : 0.25);
-        const gap = Math.max(0, (_c = parseNumber(body === null || body === void 0 ? void 0 : body.minGapBetweenClips)) !== null && _c !== void 0 ? _c : 0.4);
+        const padding = Math.max(0, (_b = parseNumber(body === null || body === void 0 ? void 0 : body.scenePadding)) !== null && _b !== void 0 ? _b : 0.1);
+        const gap = Math.max(0, (_c = parseNumber(body === null || body === void 0 ? void 0 : body.minGapBetweenClips)) !== null && _c !== void 0 ? _c : 0.1);
         const methodRaw = typeof (body === null || body === void 0 ? void 0 : body.detectionMethod) === 'string'
             ? body.detectionMethod.trim().toLowerCase()
             : undefined;

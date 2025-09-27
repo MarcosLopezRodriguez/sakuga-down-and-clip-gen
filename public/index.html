@@ -183,28 +183,28 @@
                             </div>
                             <div class="col-md-4 mb-3">
                                 <label for="threshold" class="form-label">Sensibilidad (0-100):</label>
-                                <input type="number" class="form-control" id="threshold" value="18" inputmode="numeric"
+                                <input type="number" class="form-control" id="threshold" value="8" inputmode="numeric"
                                     pattern="^[0-9]+$" step="1">
                                 <div class="form-text">Valores más bajos detectan más cambios de escena.</div>
                             </div>
                         </div>
                         <div class="row">
                             <div class="col-md-4 mb-3">
-                                <label for="maxClipsPerVideo" class="form-label">Maximo de clips por video:</label>
-                                <input type="number" class="form-control" id="maxClipsPerVideo" value="6" min="1"
-                                    step="1">
-                                <div class="form-text">Limita la cantidad de clips guardados por video.</div>
+                                <label for="maxClipsPerVideo" class="form-label">Maximo de clips por video (opcional):</label>
+                                <input type="number" class="form-control" id="maxClipsPerVideo" min="1"
+                                    step="1" placeholder="Sin limite">
+                                <div class="form-text">Deja vacio para permitir todos los clips detectados.</div>
                             </div>
                             <div class="col-md-4 mb-3">
                                 <label for="scenePadding" class="form-label">Margen extra (segundos):</label>
-                                <input type="number" class="form-control" id="scenePadding" value="0.25" min="0"
+                                <input type="number" class="form-control" id="scenePadding" value="0.1" min="0"
                                     step="0.05">
                                 <div class="form-text">Añade segundos antes y después de cada clip para evitar cortes
                                     bruscos.</div>
                             </div>
                             <div class="col-md-4 mb-3">
                                 <label for="minGapBetweenClips" class="form-label">Separación mínima (segundos):</label>
-                                <input type="number" class="form-control" id="minGapBetweenClips" value="0.4" min="0"
+                                <input type="number" class="form-control" id="minGapBetweenClips" value="0.1" min="0"
                                     step="0.1">
                                 <div class="form-text">Fusiona escenas muy cercanas para evitar clips duplicados.</div>
                             </div>

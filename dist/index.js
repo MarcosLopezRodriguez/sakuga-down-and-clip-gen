@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -50,7 +49,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CLIPS_DIR = exports.DOWNLOADS_DIR = exports.clipGenerator = exports.downloader = void 0;
 exports.processVideosToPythonClips = processVideosToPythonClips;
 exports.processDownloadedVideos = processDownloadedVideos;
-const app_1 = require("./app");
+const app_1 = __importDefault(require("./app"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const yargs_1 = __importDefault(require("yargs"));
@@ -126,7 +125,7 @@ function processDownloadedVideos(category_1) {
     });
 }, (argv) => {
     try {
-        const app = new app_1.SakugaDownAndClipGen(argv['download-dir'], argv['clips-dir'], 'output/random_names', 'output/temp_audio', // tempAudioDirectory (using default)
+        const app = new app_1.default(argv['download-dir'], argv['clips-dir'], 'output/random_names', 'output/temp_audio', // tempAudioDirectory (using default)
         'output/beat_synced_videos', // beatSyncedVideosDirectory (using default)
         argv.port);
         app.startServer();
@@ -168,7 +167,7 @@ function processDownloadedVideos(category_1) {
     });
 }, (argv) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const app = new app_1.SakugaDownAndClipGen(argv.output);
+        const app = new app_1.default(argv.output);
         const concurrency = argv.concurrency;
         if (argv['tags-file']) {
             console.log(`Procesando archivo de etiquetas: ${argv['tags-file']}`);
@@ -246,7 +245,7 @@ function processDownloadedVideos(category_1) {
     });
 }, (argv) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const app = new app_1.SakugaDownAndClipGen('output/downloads', argv.output);
+        const app = new app_1.default('output/downloads', argv.output);
         const inputPath = argv.input;
         const methodArg = typeof argv.method === 'string' ? argv.method.toLowerCase() : undefined;
         const sceneOptions = {
@@ -371,7 +370,7 @@ function processDownloadedVideos(category_1) {
     });
 }, (argv) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const app = new app_1.SakugaDownAndClipGen(argv['download-dir'], argv['clips-dir']);
+        const app = new app_1.default(argv['download-dir'], argv['clips-dir']);
         const methodArg = typeof argv.method === 'string' ? argv.method.toLowerCase() : undefined;
         const sceneOptions = {
             minDuration: argv['min-duration'],
