@@ -169,14 +169,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const MAX_TAGS = 50;
         const MAX_TAG_LEN = 64;
-        const TAG_RE = /^[A-Za-z0-9_:\-]+$/;
+        const TAG_RE = /^[A-Za-z0-9_.:\-]+$/;
         const tags = tagsText.split(';')
             .map(tag => tag.trim())
             .filter(tag => tag.length > 0)
             .slice(0, MAX_TAGS)
             .filter(tag => tag.length <= MAX_TAG_LEN && TAG_RE.test(tag));
         if (tags.length === 0) {
-            showDownloadError('No hay etiquetas válidas. Usa letras, números, _ - : separadas por ;');
+            showDownloadError('No hay etiquetas válidas. Usa letras, números, _ - . : separadas por ;');
             return;
         }
         localStorage.setItem('lastTags', tags.join(';'));

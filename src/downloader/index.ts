@@ -1,5 +1,6 @@
 import axios from 'axios';
 import * as fs from 'fs';
+const fsp = fs.promises;
 import * as path from 'path';
 import { parse as urlParse } from 'url';
 import * as cheerio from 'cheerio';
@@ -58,38 +59,22 @@ export class Downloader extends EventEmitter {
         return !invalidChars.test(name);
     }
 
-    private createDirectorySafely(dirPath: string): void {
+    private async createDirectorySafely(dirPath: string): Promise<void> {
         try {
             console.log(`Creating directory: ${dirPath}`);
-
-            // Verificar que el directorio padre existe
-            const parentDir = path.dirname(dirPath);
-            if (!fs.existsSync(parentDir)) {
-                console.log(`Creating parent directory: ${parentDir}`);
-                fs.mkdirSync(parentDir, { recursive: true });
-            }
-
-            // Crear el directorio si no existe
-            if (!fs.existsSync(dirPath)) {
-                fs.mkdirSync(dirPath, { recursive: true });
-                console.log(`Directory created successfully: ${dirPath}`);
-            } else {
-                console.log(`Directory already exists: ${dirPath}`);
-            }
+            await fsp.mkdir(dirPath, { recursive: true });
+            console.log(`Directory ensured: ${dirPath}`);
         } catch (error: any) {
             console.error(`Error creating directory ${dirPath}:`, error);
 
-            // Intentar con un nombre alternativo si el original falla
             const safeDirName = this.sanitizeDirectoryName(path.basename(dirPath));
             const fallbackPath = path.join(path.dirname(dirPath), safeDirName);
 
             if (fallbackPath !== dirPath) {
                 console.log(`Attempting fallback directory: ${fallbackPath}`);
                 try {
-                    if (!fs.existsSync(fallbackPath)) {
-                        fs.mkdirSync(fallbackPath, { recursive: true });
-                        console.log(`Fallback directory created: ${fallbackPath}`);
-                    }
+                    await fsp.mkdir(fallbackPath, { recursive: true });
+                    console.log(`Fallback directory created: ${fallbackPath}`);
                     return;
                 } catch (fallbackError) {
                     console.error(`Fallback directory creation also failed:`, fallbackError);
@@ -300,7 +285,7 @@ export class Downloader extends EventEmitter {
                 this.emit('downloadStarted', { url: videoUrl, tag, status: 'starting', message: `Iniciando descarga directa` });
             }            // Crear directorio específico para el tag de forma segura
             const tagDir = path.join(outputDir, tag);
-            this.createDirectorySafely(tagDir);
+            await this.createDirectorySafely(tagDir);
 
             // Obtener extensión del archivo original
             const originalFilename = path.basename(videoUrl);
@@ -313,7 +298,8 @@ export class Downloader extends EventEmitter {
             const finalPath = path.join(tagDir, newFilename);
 
             // Verificar si el archivo ya existe
-            if (fs.existsSync(finalPath)) {
+            try {
+                const existingStats = await fsp.stat(finalPath);
                 console.log(`File already exists: ${newFilename}`);
                 this.videoCounter += 1;
 
@@ -324,11 +310,15 @@ export class Downloader extends EventEmitter {
                     status: 'complete',
                     message: `Archivo ya existe: ${newFilename}`,
                     filePath: path.join(tag, newFilename).replace(/\\/g, '/'),
-                    fileSize: fs.statSync(finalPath).size,
+                    fileSize: existingStats.size,
                     fileName: newFilename
                 });
 
                 return finalPath;
+            } catch (statError: any) {
+                if (statError.code !== 'ENOENT') {
+                    throw statError;
+                }
             }
 
             // Descargar el archivo
@@ -379,22 +369,27 @@ export class Downloader extends EventEmitter {
             response.data.pipe(writer);
 
             return new Promise((resolve, reject) => {
-                writer.on('finish', () => {
-                    console.log(`Saved as: ${newFilename}`);
-                    this.videoCounter += 1;
+                writer.on('finish', async () => {
+                    try {
+                        console.log(`Saved as: ${newFilename}`);
+                        this.videoCounter += 1;
+                        const savedStats = await fsp.stat(finalPath);
 
-                    // Emitir evento de descarga completada
-                    this.emit('downloadComplete', {
-                        url: videoUrl,
-                        tag,
-                        status: 'complete',
-                        message: `Guardado como: ${newFilename}`,
-                        filePath: path.join(tag, newFilename).replace(/\\/g, '/'),
-                        fileSize: fs.statSync(finalPath).size,
-                        fileName: newFilename
-                    });
+                        // Emitir evento de descarga completada
+                        this.emit('downloadComplete', {
+                            url: videoUrl,
+                            tag,
+                            status: 'complete',
+                            message: `Guardado como: ${newFilename}`,
+                            filePath: path.join(tag, newFilename).replace(/\\/g, '/'),
+                            fileSize: savedStats.size,
+                            fileName: newFilename
+                        });
 
-                    resolve(finalPath);
+                        resolve(finalPath);
+                    } catch (statError) {
+                        reject(statError);
+                    }
                 });
                 writer.on('error', (err) => {
                     console.error('Error downloading video:', err);
@@ -430,7 +425,7 @@ export class Downloader extends EventEmitter {
             if (!videoUrl) return;
 
             const tagDir = path.join(outputDir, tag);
-            this.createDirectorySafely(tagDir);
+            await this.createDirectorySafely(tagDir);
 
             const originalFilename = path.basename(videoUrl);
             const originalExt = path.extname(originalFilename).toLowerCase();
@@ -440,7 +435,8 @@ export class Downloader extends EventEmitter {
             const newFilename = `${tag}_${fileNumber}${extension}`;
             const finalPath = path.join(tagDir, newFilename);
 
-            if (fs.existsSync(finalPath)) {
+            try {
+                const existingStats = await fsp.stat(finalPath);
                 console.log(`File already exists: ${newFilename}`);
                 this.emit('downloadComplete', {
                     url: videoUrl,
@@ -448,10 +444,14 @@ export class Downloader extends EventEmitter {
                     status: 'complete',
                     message: `Archivo ya existe: ${newFilename}`,
                     filePath: path.join(tag, newFilename).replace(/\\/g, '/'),
-                    fileSize: fs.statSync(finalPath).size,
+                    fileSize: existingStats.size,
                     fileName: newFilename
                 });
                 return finalPath;
+            } catch (statError: any) {
+                if (statError.code !== 'ENOENT') {
+                    throw statError;
+                }
             }
 
             this.emit('downloadProgress', {
@@ -498,13 +498,15 @@ export class Downloader extends EventEmitter {
                 writer.on('error', reject);
             });
 
+            const savedStats = await fsp.stat(finalPath);
+
             this.emit('downloadComplete', {
                 url: videoUrl,
                 tag,
                 status: 'complete',
                 message: `Guardado como: ${newFilename}`,
                 filePath: path.join(tag, newFilename).replace(/\\/g, '/'),
-                fileSize: fs.statSync(finalPath).size,
+                fileSize: savedStats.size,
                 fileName: newFilename
             });
 
