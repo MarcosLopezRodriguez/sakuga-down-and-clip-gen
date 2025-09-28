@@ -51,6 +51,7 @@ const path = __importStar(require("path"));
 const child_process_1 = require("child_process");
 const child_process_2 = require("child_process");
 const ffprobe_static_1 = __importDefault(require("ffprobe-static"));
+const ffprobeCache_1 = require("../utils/ffprobeCache");
 // Configuración de rutas para FFmpeg
 let FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
 let FFPROBE_PATH = process.env.FFPROBE_PATH || ffprobe_static_1.default.path;
@@ -789,42 +790,7 @@ class ClipGenerator {
     }
     getVideoDuration(videoPath) {
         return __awaiter(this, void 0, void 0, function* () {
-            return new Promise((resolve, reject) => {
-                // Usar FFprobe para obtener la duración del video
-                const args = [
-                    '-v', 'error',
-                    '-show_entries', 'format=duration',
-                    '-of', 'default=noprint_wrappers=1:nokey=1',
-                    videoPath
-                ];
-                const ffprobeProcess = (0, child_process_1.spawn)(this.ffprobePath, args);
-                let stdoutData = '';
-                let stderrData = '';
-                ffprobeProcess.stdout.on('data', (data) => {
-                    stdoutData += data.toString();
-                });
-                ffprobeProcess.stderr.on('data', (data) => {
-                    stderrData += data.toString();
-                });
-                ffprobeProcess.on('close', (code) => {
-                    if (code === 0) {
-                        const duration = parseFloat(stdoutData.trim());
-                        if (!isNaN(duration)) {
-                            resolve(duration);
-                        }
-                        else {
-                            reject(new Error('Could not parse video duration'));
-                        }
-                    }
-                    else {
-                        console.error('FFprobe stderr:', stderrData);
-                        reject(new Error(`FFprobe process exited with code ${code}`));
-                    }
-                });
-                ffprobeProcess.on('error', (err) => {
-                    reject(new Error(`Failed to start FFprobe process: ${err.message}`));
-                });
-            });
+            return ffprobeCache_1.ffprobeCache.getDuration(videoPath, this.ffprobePath);
         });
     }
     /**

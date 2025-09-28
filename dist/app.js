@@ -66,6 +66,7 @@ const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
 const child_process_1 = require("child_process");
 const ffprobe_static_1 = __importDefault(require("ffprobe-static"));
+const ffprobeCache_1 = require("./utils/ffprobeCache");
 class SakugaDownAndClipGen {
     constructor(downloadDirectory = 'output/downloads', clipDirectory = 'output/clips', randomNamesDirectory = 'output/random_names', tempAudioDirectory = 'output/temp_audio', beatSyncedVideosDirectory = 'output/beat_synced_videos', port = 3000) {
         this.downloader = new downloader_1.Downloader('https://www.sakugabooru.com', downloadDirectory);
@@ -861,42 +862,8 @@ class SakugaDownAndClipGen {
      */
     getVideoDurationFFprobe(videoPath) {
         return __awaiter(this, void 0, void 0, function* () {
-            return new Promise((resolve, reject) => {
-                const ffprobePath = process.env.FFPROBE_PATH || ffprobe_static_1.default.path;
-                const args = [
-                    '-v', 'error',
-                    '-show_entries', 'format=duration',
-                    '-of', 'default=noprint_wrappers=1:nokey=1',
-                    videoPath
-                ];
-                const ffprobeProcess = (0, child_process_1.spawn)(ffprobePath, args);
-                let stdoutData = '';
-                let stderrData = '';
-                ffprobeProcess.stdout.on('data', (data) => {
-                    stdoutData += data.toString();
-                });
-                ffprobeProcess.stderr.on('data', (data) => {
-                    stderrData += data.toString();
-                });
-                ffprobeProcess.on('close', (code) => {
-                    if (code === 0) {
-                        const duration = parseFloat(stdoutData.trim());
-                        if (!isNaN(duration)) {
-                            resolve(duration);
-                        }
-                        else {
-                            reject(new Error('Could not parse video duration'));
-                        }
-                    }
-                    else {
-                        console.error('FFprobe stderr:', stderrData);
-                        reject(new Error(`FFprobe process exited with code ${code}`));
-                    }
-                });
-                ffprobeProcess.on('error', (err) => {
-                    reject(new Error(`Failed to start FFprobe process: ${err.message}`));
-                });
-            });
+            const ffprobePath = process.env.FFPROBE_PATH || ffprobe_static_1.default.path;
+            return ffprobeCache_1.ffprobeCache.getDuration(videoPath, ffprobePath);
         });
     }
     /**

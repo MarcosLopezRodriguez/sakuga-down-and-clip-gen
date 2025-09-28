@@ -41,33 +41,83 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Downloader = void 0;
-const axios_1 = __importDefault(require("axios"));
 const fs = __importStar(require("fs"));
 const fsp = fs.promises;
 const path = __importStar(require("path"));
 const url_1 = require("url");
 const cheerio = __importStar(require("cheerio"));
+const httpClient_1 = require("../utils/httpClient");
 const events_1 = require("events");
 class Downloader extends events_1.EventEmitter {
     constructor(baseUrl = 'https://www.sakugabooru.com', outputDirectory = 'output/downloads') {
         super();
+        this.httpSessionPrimed = false;
         this.baseUrl = baseUrl;
         this.outputDirectory = outputDirectory;
         this.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            Referer: `${baseUrl}/`,
+            'Cache-Control': 'no-cache',
+            Pragma: 'no-cache'
         };
         this.videoCounter = 1;
         this.downloadQueue = [];
         this.isProcessing = false;
-        // Crear directorio de salida si no existe
+        const minDelayMs = Number(process.env.SAKUGA_HTTP_MIN_DELAY_MS || '1200');
+        const jitterMs = Number(process.env.SAKUGA_HTTP_JITTER_MS || '350');
+        const maxRetries = Number(process.env.SAKUGA_HTTP_MAX_RETRIES || '4');
+        const backoffFactor = Number(process.env.SAKUGA_HTTP_BACKOFF_FACTOR || '1.8');
+        const maxBackoffMs = Number(process.env.SAKUGA_HTTP_MAX_BACKOFF_MS || '20000');
+        const timeoutMs = Number(process.env.SAKUGA_HTTP_TIMEOUT_MS || '15000');
+        const playwrightWaitMs = Number(process.env.SAKUGA_PLAYWRIGHT_WAIT_MS || '4500');
+        const playwrightNavTimeoutMs = Number(process.env.SAKUGA_PLAYWRIGHT_NAV_TIMEOUT_MS || '30000');
+        const usePlaywright = process.env.SAKUGA_USE_PLAYWRIGHT === 'true';
+        const cookieUrl = process.env.SAKUGA_COOKIE_URL || `${baseUrl}`;
+        this.httpClient = new httpClient_1.RateLimitedHttpClient({
+            baseURL: baseUrl,
+            headers: this.headers,
+            minDelayMs,
+            randomJitterMs: jitterMs,
+            maxRetries,
+            backoffFactor,
+            maxBackoffMs,
+            requestTimeoutMs: timeoutMs,
+            usePlaywright,
+            cookieRefreshUrl: cookieUrl,
+            playwrightWaitMs,
+            playwrightNavigationTimeoutMs: playwrightNavTimeoutMs,
+            logger: (message) => console.log(`[DownloaderHttp] ${message}`)
+        });
         if (!fs.existsSync(outputDirectory)) {
             fs.mkdirSync(outputDirectory, { recursive: true });
         }
+        if (usePlaywright) {
+            this.httpClient.primeSession()
+                .then(() => { this.httpSessionPrimed = true; })
+                .catch(err => {
+                console.warn('Unable to prime HTTP session via Playwright:', (err === null || err === void 0 ? void 0 : err.message) || err);
+                this.httpSessionPrimed = false;
+            });
+        }
+    }
+    ensureHttpSession() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (this.httpSessionPrimed) {
+                return;
+            }
+            this.httpSessionPrimed = true;
+            try {
+                yield this.httpClient.primeSession();
+            }
+            catch (err) {
+                this.httpSessionPrimed = false;
+                console.warn('Failed to prepare HTTP session:', (err === null || err === void 0 ? void 0 : err.message) || err);
+            }
+        });
     }
     getTagFromUrl(url) {
         const parsed = (0, url_1.parse)(url, true);
@@ -156,10 +206,11 @@ class Downloader extends events_1.EventEmitter {
                     throw new Error('Invalid URL');
                 }
                 console.log(`Fetching posts from ${url}...`);
-                const response = yield axios_1.default.get(url, {
-                    headers: this.headers,
-                    responseType: 'text', // Force response as text
-                    timeout: 15000
+                yield this.ensureHttpSession();
+                const response = yield this.httpClient.request({
+                    url,
+                    method: 'GET',
+                    responseType: 'text'
                 });
                 // Make sure we have data before parsing
                 if (!response.data) {
@@ -208,10 +259,11 @@ class Downloader extends events_1.EventEmitter {
                     throw new Error('Invalid URL');
                 }
                 console.log(`Fetching video URL from ${postUrl}...`);
-                const response = yield axios_1.default.get(postUrl, {
-                    headers: this.headers,
-                    responseType: 'text', // Force response as text
-                    timeout: 15000
+                yield this.ensureHttpSession();
+                const response = yield this.httpClient.request({
+                    url: postUrl,
+                    method: 'GET',
+                    responseType: 'text'
                 });
                 // Make sure we have data before parsing
                 if (!response.data) {
@@ -344,7 +396,8 @@ class Downloader extends events_1.EventEmitter {
                     status: 'downloading',
                     message: `Descargando: ${originalFilename} como ${newFilename}`
                 });
-                const response = yield (0, axios_1.default)({
+                yield this.ensureHttpSession();
+                const response = yield this.httpClient.request({
                     method: 'GET',
                     url: videoUrl,
                     responseType: 'stream',
@@ -460,7 +513,8 @@ class Downloader extends events_1.EventEmitter {
                     status: 'downloading',
                     message: `Descargando: ${originalFilename} como ${newFilename}`
                 });
-                const response = yield (0, axios_1.default)({
+                yield this.ensureHttpSession();
+                const response = yield this.httpClient.request({
                     method: 'GET',
                     url: videoUrl,
                     responseType: 'stream',

@@ -11,6 +11,7 @@ import http from 'http';
 import { Server, Socket } from 'socket.io';
 import { spawn } from 'child_process';
 import ffprobe from 'ffprobe-static';
+import { ffprobeCache } from './utils/ffprobeCache';
 
 // Interface for requests with file uploads
 interface RequestWithFile extends Request {
@@ -923,46 +924,14 @@ export class SakugaDownAndClipGen {
      * Obtiene la duraciÃ³n de un video utilizando FFprobe
      */
     private async getVideoDurationFFprobe(videoPath: string): Promise<number> {
-        return new Promise((resolve, reject) => {
-            const ffprobePath = process.env.FFPROBE_PATH || ffprobe.path;
-            const args = [
-                '-v', 'error',
-                '-show_entries', 'format=duration',
-                '-of', 'default=noprint_wrappers=1:nokey=1',
-                videoPath
-            ];
 
-            const ffprobeProcess = spawn(ffprobePath, args);
-            let stdoutData = '';
-            let stderrData = '';
+        const ffprobePath = process.env.FFPROBE_PATH || ffprobe.path;
 
-            ffprobeProcess.stdout.on('data', (data) => {
-                stdoutData += data.toString();
-            });
+        return ffprobeCache.getDuration(videoPath, ffprobePath);
 
-            ffprobeProcess.stderr.on('data', (data) => {
-                stderrData += data.toString();
-            });
-
-            ffprobeProcess.on('close', (code) => {
-                if (code === 0) {
-                    const duration = parseFloat(stdoutData.trim());
-                    if (!isNaN(duration)) {
-                        resolve(duration);
-                    } else {
-                        reject(new Error('Could not parse video duration'));
-                    }
-                } else {
-                    console.error('FFprobe stderr:', stderrData);
-                    reject(new Error(`FFprobe process exited with code ${code}`));
-                }
-            });
-
-            ffprobeProcess.on('error', (err) => {
-                reject(new Error(`Failed to start FFprobe process: ${err.message}`));
-            });
-        });
     }
+
+
 
     /**
      * Obtiene el contenido de un directorio e incluye la duraciÃ³n de los videos

@@ -3,6 +3,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import { execSync } from 'child_process';
 import ffprobe from 'ffprobe-static';
+import { ffprobeCache } from '../utils/ffprobeCache';
 
 /**
  * Opciones para la detección de escenas
@@ -892,46 +893,7 @@ export class ClipGenerator {
     }
 
     private async getVideoDuration(videoPath: string): Promise<number> {
-        return new Promise((resolve, reject) => {
-            // Usar FFprobe para obtener la duración del video
-            const args = [
-                '-v', 'error',
-                '-show_entries', 'format=duration',
-                '-of', 'default=noprint_wrappers=1:nokey=1',
-                videoPath
-            ];
-
-            const ffprobeProcess = spawn(this.ffprobePath, args);
-
-            let stdoutData = '';
-            let stderrData = '';
-
-            ffprobeProcess.stdout.on('data', (data) => {
-                stdoutData += data.toString();
-            });
-
-            ffprobeProcess.stderr.on('data', (data) => {
-                stderrData += data.toString();
-            });
-
-            ffprobeProcess.on('close', (code) => {
-                if (code === 0) {
-                    const duration = parseFloat(stdoutData.trim());
-                    if (!isNaN(duration)) {
-                        resolve(duration);
-                    } else {
-                        reject(new Error('Could not parse video duration'));
-                    }
-                } else {
-                    console.error('FFprobe stderr:', stderrData);
-                    reject(new Error(`FFprobe process exited with code ${code}`));
-                }
-            });
-
-            ffprobeProcess.on('error', (err) => {
-                reject(new Error(`Failed to start FFprobe process: ${err.message}`));
-            });
-        });
+        return ffprobeCache.getDuration(videoPath, this.ffprobePath);
     }
 
 

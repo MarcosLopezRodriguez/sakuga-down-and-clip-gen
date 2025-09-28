@@ -1,9 +1,9 @@
-import axios from 'axios';
 import * as fs from 'fs';
 const fsp = fs.promises;
 import * as path from 'path';
 import { parse as urlParse } from 'url';
 import * as cheerio from 'cheerio';
+import { RateLimitedHttpClient } from '../utils/httpClient';
 import { EventEmitter } from 'events';
 
 export class Downloader extends EventEmitter {
@@ -13,21 +13,76 @@ export class Downloader extends EventEmitter {
     private videoCounter: number;
     private downloadQueue: { url: string; tag: string; status: string }[];
     private isProcessing: boolean;
+    private httpClient: RateLimitedHttpClient;
+    private httpSessionPrimed = false;
 
     constructor(baseUrl: string = 'https://www.sakugabooru.com', outputDirectory: string = 'output/downloads') {
         super();
         this.baseUrl = baseUrl;
         this.outputDirectory = outputDirectory;
         this.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            Referer: `${baseUrl}/`,
+            'Cache-Control': 'no-cache',
+            Pragma: 'no-cache'
         };
         this.videoCounter = 1;
         this.downloadQueue = [];
         this.isProcessing = false;
 
-        // Crear directorio de salida si no existe
+        const minDelayMs = Number(process.env.SAKUGA_HTTP_MIN_DELAY_MS || '1200');
+        const jitterMs = Number(process.env.SAKUGA_HTTP_JITTER_MS || '350');
+        const maxRetries = Number(process.env.SAKUGA_HTTP_MAX_RETRIES || '4');
+        const backoffFactor = Number(process.env.SAKUGA_HTTP_BACKOFF_FACTOR || '1.8');
+        const maxBackoffMs = Number(process.env.SAKUGA_HTTP_MAX_BACKOFF_MS || '20000');
+        const timeoutMs = Number(process.env.SAKUGA_HTTP_TIMEOUT_MS || '15000');
+        const playwrightWaitMs = Number(process.env.SAKUGA_PLAYWRIGHT_WAIT_MS || '4500');
+        const playwrightNavTimeoutMs = Number(process.env.SAKUGA_PLAYWRIGHT_NAV_TIMEOUT_MS || '30000');
+        const usePlaywright = process.env.SAKUGA_USE_PLAYWRIGHT === 'true';
+        const cookieUrl = process.env.SAKUGA_COOKIE_URL || `${baseUrl}`;
+
+        this.httpClient = new RateLimitedHttpClient({
+            baseURL: baseUrl,
+            headers: this.headers,
+            minDelayMs,
+            randomJitterMs: jitterMs,
+            maxRetries,
+            backoffFactor,
+            maxBackoffMs,
+            requestTimeoutMs: timeoutMs,
+            usePlaywright,
+            cookieRefreshUrl: cookieUrl,
+            playwrightWaitMs,
+            playwrightNavigationTimeoutMs: playwrightNavTimeoutMs,
+            logger: (message) => console.log(`[DownloaderHttp] ${message}`)
+        });
+
         if (!fs.existsSync(outputDirectory)) {
             fs.mkdirSync(outputDirectory, { recursive: true });
+        }
+
+        if (usePlaywright) {
+            this.httpClient.primeSession()
+                .then(() => { this.httpSessionPrimed = true; })
+                .catch(err => {
+                    console.warn('Unable to prime HTTP session via Playwright:', err?.message || err);
+                    this.httpSessionPrimed = false;
+                });
+        }
+    }
+
+    private async ensureHttpSession(): Promise<void> {
+        if (this.httpSessionPrimed) {
+            return;
+        }
+        this.httpSessionPrimed = true;
+        try {
+            await this.httpClient.primeSession();
+        } catch (err: any) {
+            this.httpSessionPrimed = false;
+            console.warn('Failed to prepare HTTP session:', err?.message || err);
         }
     }
 
@@ -125,10 +180,12 @@ export class Downloader extends EventEmitter {
 
             console.log(`Fetching posts from ${url}...`);
 
-            const response = await axios.get(url, {
-                headers: this.headers,
-                responseType: 'text', // Force response as text
-                timeout: 15000
+            await this.ensureHttpSession();
+
+            const response = await this.httpClient.request<string>({
+                url,
+                method: 'GET',
+                responseType: 'text'
             });
 
             // Make sure we have data before parsing
@@ -180,10 +237,12 @@ export class Downloader extends EventEmitter {
 
             console.log(`Fetching video URL from ${postUrl}...`);
 
-            const response = await axios.get(postUrl, {
-                headers: this.headers,
-                responseType: 'text', // Force response as text
-                timeout: 15000
+            await this.ensureHttpSession();
+
+            const response = await this.httpClient.request<string>({
+                url: postUrl,
+                method: 'GET',
+                responseType: 'text'
             });
 
             // Make sure we have data before parsing
@@ -332,7 +391,9 @@ export class Downloader extends EventEmitter {
                 message: `Descargando: ${originalFilename} como ${newFilename}`
             });
 
-            const response = await axios({
+            await this.ensureHttpSession();
+
+            const response = await this.httpClient.request({
                 method: 'GET',
                 url: videoUrl,
                 responseType: 'stream',
@@ -461,7 +522,9 @@ export class Downloader extends EventEmitter {
                 message: `Descargando: ${originalFilename} como ${newFilename}`
             });
 
-            const response = await axios({
+            await this.ensureHttpSession();
+
+            const response = await this.httpClient.request({
                 method: 'GET',
                 url: videoUrl,
                 responseType: 'stream',
