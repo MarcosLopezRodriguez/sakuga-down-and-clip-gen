@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { spawn } from 'child_process';
 import { execSync } from 'child_process';
 import ffprobe from 'ffprobe-static';
@@ -23,6 +24,20 @@ type NormalizedSegment = {
     seg: [number, number];
     raw: [number, number];
     duration: number;
+};
+
+export interface ClipCommandOptions {
+    reencode?: boolean;
+    fastSeek?: boolean;
+}
+
+export interface ClipBatchOptions extends ClipCommandOptions {
+    concurrency?: number;
+}
+
+type ResolvedClipCommandOptions = {
+    reencode: boolean;
+    fastSeek: boolean;
 };
 
 // Configuración de rutas para FFmpeg
@@ -97,6 +112,8 @@ export class ClipGenerator {
     private outputDirectory: string;
     private ffmpegPath: string;
     private ffprobePath: string;
+    private preferStreamCopy: boolean;
+    private clipConcurrencyLimit: number;
 
     constructor(
         outputDirectory: string = 'output/clips',
@@ -106,6 +123,8 @@ export class ClipGenerator {
         this.outputDirectory = outputDirectory;
         this.ffmpegPath = ffmpegPath || FFMPEG_PATH;
         this.ffprobePath = ffprobePath || FFPROBE_PATH;
+        this.preferStreamCopy = this.computeStreamCopyPreference();
+        this.clipConcurrencyLimit = this.computeInitialConcurrencyLimit();
 
         console.log(`Usando FFmpeg en: ${this.ffmpegPath}`);
         console.log(`Usando FFprobe en: ${this.ffprobePath}`);
@@ -179,6 +198,171 @@ export class ClipGenerator {
         return Math.min(Math.max(normalized, 0.01), 1);
     }
 
+    private computeStreamCopyPreference(): boolean {
+        const envValue = process.env.CLIP_PREFER_STREAM_COPY;
+        if (!envValue) {
+            return false;
+        }
+
+        const normalized = envValue.trim().toLowerCase();
+        return ['1', 'true', 'yes', 'on'].includes(normalized);
+    }
+
+    private resolveClipOptions(options?: ClipCommandOptions): ResolvedClipCommandOptions {
+        const reencodeDefault = !this.preferStreamCopy;
+        const reencode = options?.reencode !== undefined ? options.reencode : reencodeDefault;
+        const fastSeek = reencode ? false : options?.fastSeek ?? true;
+
+        return { reencode, fastSeek };
+    }
+
+    private formatFfmpegTime(value: number): string {
+        if (!Number.isFinite(value)) {
+            throw new Error(`Invalid time value: ${value}`);
+        }
+
+        const clamped = Math.max(0, value);
+        const fixed = clamped.toFixed(3);
+        return fixed.replace(/\.?0+$/, '').replace(/\.$/, '');
+    }
+
+    private buildClipCommandArgs(
+        videoPath: string,
+        startTime: number,
+        endTime: number,
+        outputPath: string,
+        options: ResolvedClipCommandOptions
+    ): string[] {
+        const duration = endTime - startTime;
+        if (duration <= 0) {
+            throw new Error(`Clip duration must be positive. Received start=${startTime}, end=${endTime}`);
+        }
+
+        const args: string[] = [];
+
+        if (!options.reencode && options.fastSeek) {
+            args.push('-ss', this.formatFfmpegTime(startTime));
+            args.push('-i', videoPath);
+        } else {
+            args.push('-i', videoPath);
+            args.push('-ss', this.formatFfmpegTime(startTime));
+        }
+
+        args.push('-t', this.formatFfmpegTime(duration));
+
+        if (options.reencode) {
+            args.push('-c:v', 'libx264');
+        } else {
+            args.push('-c', 'copy');
+            args.push('-avoid_negative_ts', 'make_zero');
+        }
+
+        args.push('-an');
+        args.push('-y');
+        args.push(outputPath);
+
+        return args;
+    }
+
+    private async executeClipCommand(args: string[], outputPath: string): Promise<string> {
+        return new Promise((resolve, reject) => {
+            console.log(`Running ffmpeg command: ${this.ffmpegPath} ${args.join(' ')}`);
+            const ffmpegProcess = spawn(this.ffmpegPath, args);
+
+            ffmpegProcess.stdout.on('data', (data) => {
+                console.log(`ffmpeg stdout: ${data}`);
+            });
+
+            ffmpegProcess.stderr.on('data', (data) => {
+                console.log(`ffmpeg stderr: ${data}`);
+            });
+
+            ffmpegProcess.on('close', (code) => {
+                if (code === 0) {
+                    if (fs.existsSync(outputPath)) {
+                        console.log(`Clip successfully generated at ${outputPath}`);
+                        console.log(`Output file verified at ${outputPath}`);
+                        resolve(outputPath);
+                    } else {
+                        reject(new Error(`Output file not found at ${outputPath}`));
+                    }
+                } else {
+                    reject(new Error(`ffmpeg process exited with code ${code}`));
+                }
+            });
+
+            ffmpegProcess.on('error', (err) => {
+                reject(new Error(`Failed to start ffmpeg process: ${err.message}`));
+            });
+        });
+    }
+
+    private computeInitialConcurrencyLimit(): number {
+        const envValue = process.env.CLIP_CONCURRENCY;
+        if (envValue) {
+            const parsed = Number.parseInt(envValue, 10);
+            if (Number.isFinite(parsed) && parsed > 0) {
+                return Math.max(1, parsed);
+            }
+        }
+
+        try {
+            if (typeof os.cpus === 'function') {
+                const cpuInfo = os.cpus();
+                const cpuCount = Array.isArray(cpuInfo) && cpuInfo.length > 0 ? cpuInfo.length : 1;
+                return Math.max(1, cpuCount - 1);
+            }
+        } catch (error) {
+            // Ignore CPU detection errors and fall back to single worker
+        }
+
+        return 1;
+    }
+
+    private resolveConcurrencyLimit(requested?: number): number {
+        if (typeof requested === 'number' && Number.isFinite(requested) && requested > 0) {
+            return Math.max(1, Math.floor(requested));
+        }
+        return this.clipConcurrencyLimit;
+    }
+
+    private async processSegmentsWithLimit<T>(
+        segments: [number, number][],
+        limit: number,
+        handler: (segment: [number, number], index: number) => Promise<T | undefined>
+    ): Promise<T[]> {
+        if (!segments.length) {
+            return [];
+        }
+
+        const sanitizedLimit = Math.max(1, Math.min(limit, segments.length));
+        const results: (T | undefined)[] = new Array(segments.length);
+
+        for (let batchStart = 0; batchStart < segments.length; batchStart += sanitizedLimit) {
+            const batch = segments.slice(batchStart, batchStart + sanitizedLimit);
+            const tasks = batch.map((segment, offset) => {
+                const index = batchStart + offset;
+                const [segmentStart, segmentEnd] = segment;
+
+                return handler(segment, index)
+                    .catch((error) => {
+                        console.error(`Failed to process segment ${segmentStart}-${segmentEnd}:`, error);
+                        return undefined;
+                    })
+                    .then((value) => ({ index, value }));
+            });
+
+            const settled = await Promise.all(tasks);
+            for (const { index, value } of settled) {
+                results[index] = value;
+            }
+        }
+
+        return results.filter((value): value is T => value !== undefined);
+    }
+
+
+
     /**
      * Genera un clip de video a partir de un video fuente
      * @param videoPath Ruta al video fuente
@@ -191,73 +375,47 @@ export class ClipGenerator {
         videoPath: string,
         startTime: number,
         endTime: number,
-        outputName?: string
+        outputNameOrOptions?: string | ClipCommandOptions,
+        maybeOptions?: ClipCommandOptions
     ): Promise<string> {
-        return new Promise((resolve, reject) => {
-            if (!fs.existsSync(videoPath)) {
-                console.error(`Error: Video file not found: ${videoPath}`);
-                return reject(new Error(`Video file not found: ${videoPath}`));
-            }
+        if (!fs.existsSync(videoPath)) {
+            console.error(`Error: Video file not found: ${videoPath}`);
+            throw new Error(`Video file not found: ${videoPath}`);
+        }
 
-            // Crear nombre de archivo de salida si no se proporciona uno
-            const videoName = path.basename(videoPath, path.extname(videoPath));
-            const outputFileName = outputName || `${videoName}_clip_${startTime}_${endTime}.mp4`;
-            const outputPath = path.join(this.outputDirectory, outputFileName);
+        let outputName: string | undefined;
+        let options: ClipCommandOptions | undefined;
 
-            console.log(`Generating clip from ${startTime}s to ${endTime}s from video ${videoPath}`);
-            console.log(`Output path: ${outputPath}`);
+        if (typeof outputNameOrOptions === 'string' || outputNameOrOptions === undefined) {
+            outputName = typeof outputNameOrOptions === 'string' ? outputNameOrOptions : undefined;
+            options = maybeOptions;
+        } else {
+            options = outputNameOrOptions;
+        }
 
-            // Asegurar que el directorio de salida existe
-            if (!fs.existsSync(this.outputDirectory)) {
-                console.log(`Creating output directory: ${this.outputDirectory}`);
-                fs.mkdirSync(this.outputDirectory, { recursive: true });
-            }
+        const clipOptions = this.resolveClipOptions(options);
 
-            // Comando para generar el clip usando ffmpeg
-            const duration = endTime - startTime;
-            const args = [
-                '-i', videoPath,
-                '-ss', startTime.toString(),
-                '-t', duration.toString(),
-                '-c:v', 'libx264',
-                '-an', // Sin audio
-                '-y', // Sobrescribir si existe
-                outputPath
-            ];
+        // Crear nombre de archivo de salida si no se proporciona uno
+        const videoName = path.basename(videoPath, path.extname(videoPath));
+        const outputFileName = outputName || `${videoName}_clip_${startTime}_${endTime}.mp4`;
+        const outputPath = path.join(this.outputDirectory, outputFileName);
 
-            console.log(`Running ffmpeg command: ${this.ffmpegPath} ${args.join(' ')}`);
-            const ffmpegProcess = spawn(this.ffmpegPath, args);
+        console.log(`Generating clip from ${startTime}s to ${endTime}s from video ${videoPath}`);
+        console.log(`Output path: ${outputPath}`);
 
-            ffmpegProcess.stdout.on('data', (data) => {
-                console.log(`ffmpeg stdout: ${data}`);
-            });
+        // Asegurar que el directorio de salida existe
+        if (!fs.existsSync(this.outputDirectory)) {
+            console.log(`Creating output directory: ${this.outputDirectory}`);
+            fs.mkdirSync(this.outputDirectory, { recursive: true });
+        }
 
-            ffmpegProcess.stderr.on('data', (data) => {
-                console.log(`ffmpeg stderr: ${data}`); // ffmpeg muestra info en stderr
-            });
+        if (!clipOptions.reencode) {
+            console.log(`Using stream copy clip extraction (fast seek: ${clipOptions.fastSeek})`);
+        }
 
-            ffmpegProcess.on('close', (code) => {
-                if (code === 0) {
-                    console.log(`Clip successfully generated at ${outputPath}`);
-                    // Verificar que el archivo realmente existe
-                    if (fs.existsSync(outputPath)) {
-                        console.log(`Output file verified at ${outputPath}`);
-                        resolve(outputPath);
-                    } else {
-                        console.error(`Error: Output file not found at ${outputPath} despite successful ffmpeg exit code`);
-                        reject(new Error(`Output file not found at ${outputPath}`));
-                    }
-                } else {
-                    console.error(`Error: ffmpeg process exited with code ${code}`);
-                    reject(new Error(`ffmpeg process exited with code ${code}`));
-                }
-            });
+        const args = this.buildClipCommandArgs(videoPath, startTime, endTime, outputPath, clipOptions);
 
-            ffmpegProcess.on('error', (err) => {
-                console.error(`Error: Failed to start ffmpeg process: ${err.message}`);
-                reject(new Error(`Failed to start ffmpeg process: ${err.message}`));
-            });
-        });
+        return this.executeClipCommand(args, outputPath);
     }
 
     /**
@@ -268,20 +426,22 @@ export class ClipGenerator {
      */
     async generateMultipleClips(
         videoPath: string,
-        timeSegments: [number, number][]
+        timeSegments: [number, number][],
+        options: ClipBatchOptions = {}
     ): Promise<string[]> {
-        const clipPaths: string[] = [];
-
-        for (const [startTime, endTime] of timeSegments) {
-            try {
-                const clipPath = await this.generateClip(videoPath, startTime, endTime);
-                clipPaths.push(clipPath);
-            } catch (error) {
-                console.error(`Failed to generate clip ${startTime}-${endTime}:`, error);
-            }
+        if (!timeSegments.length) {
+            return [];
         }
 
-        return clipPaths;
+        const concurrency = this.resolveConcurrencyLimit(options.concurrency);
+
+        return this.processSegmentsWithLimit<string>(
+            timeSegments,
+            concurrency,
+            async ([startTime, endTime]) => {
+                return this.generateClip(videoPath, startTime, endTime, options);
+            }
+        );
     }
 
     /**
@@ -506,20 +666,23 @@ export class ClipGenerator {
                             fs.mkdirSync(directorioVideo, { recursive: true });
                         }
 
-                        const clipPaths: string[] = [];
-                        for (let i = 0; i < normalizedSegments.length; i++) {
-                            const [inicio, fin] = normalizedSegments[i];
-                            const outputFileName = `${nombreVideo}_scene${i + 1}.mp4`;
-                            const outputPath = path.join(directorioVideo, outputFileName);
+                        const clipPaths = await this.processSegmentsWithLimit<string>(
+                            normalizedSegments,
+                            this.clipConcurrencyLimit,
+                            async ([inicio, fin], index) => {
+                                const outputFileName = `${nombreVideo}_scene${index + 1}.mp4`;
+                                const outputPath = path.join(directorioVideo, outputFileName);
 
-                            try {
-                                await this.generateClipWithoutAudio(videoPath, inicio, fin, outputPath);
-                                clipPaths.push(outputPath);
-                                console.log(`Generated clip ${i + 1}/${normalizedSegments.length}: ${outputFileName}`);
-                            } catch (error) {
-                                console.error(`Error generando clip ${outputFileName}:`, error);
+                                try {
+                                    await this.generateClipWithoutAudio(videoPath, inicio, fin, outputPath);
+                                    console.log(`Generated clip ${index + 1}/${normalizedSegments.length}: ${outputFileName}`);
+                                    return outputPath;
+                                } catch (error) {
+                                    console.error(`Error generando clip ${outputFileName}:`, error);
+                                    throw error;
+                                }
                             }
-                        }
+                        );
 
                         resolve(clipPaths);
                     } catch (error) {
@@ -678,20 +841,23 @@ export class ClipGenerator {
                         fs.mkdirSync(directorioVideo, { recursive: true });
                     }
 
-                    const clipPaths: string[] = [];
-                    for (let i = 0; i < normalizedSegments.length; i++) {
-                        const [inicio, fin] = normalizedSegments[i];
-                        const outputFileName = `${nombreVideo}_scene${i + 1}.mp4`;
-                        const outputPath = path.join(directorioVideo, outputFileName);
+                    const clipPaths = await this.processSegmentsWithLimit<string>(
+                        normalizedSegments,
+                        this.clipConcurrencyLimit,
+                        async ([inicio, fin], index) => {
+                            const outputFileName = `${nombreVideo}_scene${index + 1}.mp4`;
+                            const outputPath = path.join(directorioVideo, outputFileName);
 
-                        try {
-                            await this.generateClipWithoutAudio(videoPath, inicio, fin, outputPath);
-                            clipPaths.push(outputPath);
-                            console.log(`Generated clip ${i + 1}/${normalizedSegments.length}: ${outputFileName}`);
-                        } catch (error) {
-                            console.error(`Error generando clip ${outputFileName}:`, error);
+                            try {
+                                await this.generateClipWithoutAudio(videoPath, inicio, fin, outputPath);
+                                console.log(`Generated clip ${index + 1}/${normalizedSegments.length}: ${outputFileName}`);
+                                return outputPath;
+                            } catch (error) {
+                                console.error(`Error generando clip ${outputFileName}:`, error);
+                                throw error;
+                            }
                         }
-                    }
+                    );
 
                     resolve(clipPaths);
                 } catch (error) {
@@ -838,20 +1004,23 @@ export class ClipGenerator {
             }
 
             // Generar clips para cada escena
-            const clipPaths: string[] = [];
-            for (let i = 0; i < escenasFiltradas.length; i++) {
-                const [inicio, fin] = escenasFiltradas[i];
-                const outputFileName = `${nombreVideo}_scene${i + 1}.mp4`;
-                const outputPath = path.join(directorioVideo, outputFileName);
+            const clipPaths = await this.processSegmentsWithLimit<string>(
+                escenasFiltradas,
+                this.clipConcurrencyLimit,
+                async ([inicio, fin], index) => {
+                    const outputFileName = `${nombreVideo}_scene${index + 1}.mp4`;
+                    const outputPath = path.join(directorioVideo, outputFileName);
 
-                try {
-                    // Generar clip usando FFmpeg (sin audio como en Python)
-                    await this.generateClipWithoutAudio(rutaVideo, inicio, fin, outputPath);
-                    clipPaths.push(outputPath);
-                } catch (error) {
-                    console.error(`Error generando clip ${outputFileName}:`, error);
+                    try {
+                        // Generar clip usando FFmpeg (sin audio como en Python)
+                        await this.generateClipWithoutAudio(rutaVideo, inicio, fin, outputPath);
+                        return outputPath;
+                    } catch (error) {
+                        console.error(`Error generando clip ${outputFileName}:`, error);
+                        throw error;
+                    }
                 }
-            }
+            );
 
             console.log(`Procesamiento de ${rutaVideo} completado.`);
             return clipPaths;
@@ -904,48 +1073,19 @@ export class ClipGenerator {
         videoPath: string,
         startTime: number,
         endTime: number,
-        outputPath: string
+        outputPath: string,
+        options?: ClipCommandOptions
     ): Promise<string> {
-        return new Promise((resolve, reject) => {
-            if (!fs.existsSync(videoPath)) {
-                return reject(new Error(`Video file not found: ${videoPath}`));
-            }
+        if (!fs.existsSync(videoPath)) {
+            throw new Error(`Video file not found: ${videoPath}`);
+        }
 
-            // Duración del clip
-            const duration = endTime - startTime;
+        const clipOptions = this.resolveClipOptions(options);
+        const args = this.buildClipCommandArgs(videoPath, startTime, endTime, outputPath, clipOptions);
 
-            // Comando para generar el clip sin audio usando FFmpeg (como en el script Python)
-            const args = [
-                '-i', videoPath,
-                '-ss', startTime.toString(),
-                '-t', duration.toString(),
-                '-c:v', 'libx264',
-                '-an', // Sin audio
-                '-y',  // Sobrescribir si existe
-                outputPath
-            ];
+        console.log(`Generando clip de ${startTime}s a ${endTime}s`);
 
-            console.log(`Generando clip de ${startTime}s a ${endTime}s`);
-            const ffmpegProcess = spawn(this.ffmpegPath, args);
-
-            ffmpegProcess.stderr.on('data', (data) => {
-                // FFmpeg muestra información en stderr
-                console.log(`ffmpeg: ${data}`);
-            });
-
-            ffmpegProcess.on('close', (code) => {
-                if (code === 0 && fs.existsSync(outputPath)) {
-                    console.log(`Clip generado correctamente: ${outputPath}`);
-                    resolve(outputPath);
-                } else {
-                    reject(new Error(`Error generando clip, código: ${code}`));
-                }
-            });
-
-            ffmpegProcess.on('error', (err) => {
-                reject(new Error(`Error iniciando proceso ffmpeg: ${err.message}`));
-            });
-        });
+        return this.executeClipCommand(args, outputPath);
     }
 
     /**
