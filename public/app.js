@@ -28,44 +28,59 @@ document.addEventListener('DOMContentLoaded', () => {
     // Tab navigation
     const navLinks = document.querySelectorAll('.navbar-nav .nav-link');
     const sections = document.querySelectorAll('.section-content');
+    const DEFAULT_SECTION = 'download';
+
+    function activateSection(sectionId, { persist = true, focusLink = true } = {}) {
+        if (!sectionId) return;
+
+        sections.forEach(section => section.classList.remove('active'));
+        navLinks.forEach(navLink => {
+            navLink.classList.remove('active');
+            navLink.removeAttribute('aria-current');
+        });
+
+        const targetSectionElement = document.getElementById(sectionId);
+        if (targetSectionElement) {
+            targetSectionElement.classList.add('active');
+        }
+
+        const targetLink = document.querySelector(`.navbar-nav .nav-link[data-section="${sectionId}"]`);
+        if (targetLink) {
+            targetLink.classList.add('active');
+            targetLink.setAttribute('aria-current', 'page');
+            if (focusLink) {
+                try {
+                    targetLink.focus({ preventScroll: true });
+                } catch (_) {
+                    targetLink.focus();
+                }
+            }
+        }
+
+        if (sectionId === 'rename-clips') {
+            fetchAndDisplayClipFolders();
+        } else if (sectionId === 'beat-sync') {
+            fetchAndDisplayBeatSyncClipFolders(); // Function to be added later
+        }
+
+        if (persist) {
+            localStorage.setItem('activeSection', sectionId);
+        }
+    }
 
     navLinks.forEach(link => {
         link.addEventListener('click', (e) => {
             e.preventDefault();
             const targetSectionId = link.dataset.section;
-
-            // Hide all sections and remove active state/aria-current from nav links
-            sections.forEach(section => section.classList.remove('active'));
-            navLinks.forEach(navLink => {
-                navLink.classList.remove('active');
-                navLink.removeAttribute('aria-current');
-            });
-
-            // Show target section and set active class on clicked link
-            const targetSectionElement = document.getElementById(targetSectionId);
-            if (targetSectionElement) {
-                targetSectionElement.classList.add('active');
-            }
-            link.classList.add('active');
-            link.setAttribute('aria-current', 'page');
-            // Keep focus on the active nav item for accessibility
-            try { link.focus({ preventScroll: true }); } catch (_) { link.focus(); }
-
-            // If the rename-clips tab is activated, fetch its folders
-            if (targetSectionId === 'rename-clips') {
-                fetchAndDisplayClipFolders();
-            } else if (targetSectionId === 'beat-sync') {
-                fetchAndDisplayBeatSyncClipFolders(); // Function to be added later
-            }
-            localStorage.setItem('activeSection', targetSectionId);
+            activateSection(targetSectionId);
         });
     });
 
-    const savedSection = localStorage.getItem('activeSection');
-    if (savedSection) {
-        const savedLink = document.querySelector(`.navbar-nav .nav-link[data-section="${savedSection}"]`);
-        if (savedLink) savedLink.click();
-    }
+    const hashSection = window.location.hash ? window.location.hash.replace('#', '') : '';
+    const initialSectionId = hashSection && document.getElementById(hashSection)
+        ? hashSection
+        : DEFAULT_SECTION;
+    activateSection(initialSectionId, { persist: true, focusLink: false });
 
     // Specific elements for the "Rename Clips" tab
     const folderLoadingIndicator = document.getElementById('folder-loading-indicator');
@@ -1395,6 +1410,43 @@ function handleClipSelectionChange(videoName, clipPath, isChecked, cardEl) {
     if (set.size === 0) {
         selectedClipsMap.delete(videoName);
     }
+    syncClipSelectionUI(videoName);
+    updateDeleteSelectedButton(videoName);
+}
+
+function getClipElementsForVideo(videoName) {
+    return Array.from(document.querySelectorAll('[data-video-name]'))
+        .filter(el => el.dataset.videoName === videoName);
+}
+
+function syncClipSelectionUI(videoName) {
+    const set = selectedClipsMap.get(videoName);
+    getClipElementsForVideo(videoName).forEach(clipEl => {
+        const clipPath = clipEl.dataset.clipPath;
+        if (!clipPath) return;
+        const checkbox = clipEl.querySelector('.clip-select-checkbox');
+        const card = clipEl.querySelector('.card');
+        const isSelected = !!(set && set.has(clipPath));
+        if (checkbox) {
+            checkbox.checked = isSelected;
+        }
+        if (card) {
+            card.classList.toggle('clip-selected', isSelected);
+        }
+    });
+}
+
+function selectAllClipsForVideo(videoName, clipPaths = []) {
+    const normalizedPaths = Array.isArray(clipPaths) && clipPaths.length
+        ? clipPaths
+        : getClipElementsForVideo(videoName)
+            .map(el => el.dataset.clipPath)
+            .filter(Boolean);
+
+    if (normalizedPaths.length === 0) return;
+
+    selectedClipsMap.set(videoName, new Set(normalizedPaths));
+    syncClipSelectionUI(videoName);
     updateDeleteSelectedButton(videoName);
 }
 
@@ -1409,6 +1461,7 @@ async function deleteSelectedClips(videoName) {
         return deleteClip(p, elementId);
     }));
     selectedClipsMap.delete(videoName);
+    syncClipSelectionUI(videoName);
     updateDeleteSelectedButton(videoName);
 }
 
@@ -1449,6 +1502,7 @@ function displayGeneratedClips(clips) {
         let currentPage = videoPaginationState.get(videoName).currentPage;
         const totalPages = Math.ceil(videoClips.length / CLIPS_PER_PAGE);
         const totalDuration = videoClips.reduce((sum, c) => sum + (c.duration || 0), 0);
+        const clipPathsForVideo = videoClips.map(clip => clip.path);
 
         // Adjust current page if it's now invalid (happens when deleting clips)
         if (currentPage > totalPages && totalPages > 0) {
@@ -1475,6 +1529,9 @@ function displayGeneratedClips(clips) {
                     <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${videoClips.length} clips</span></h5>
                     <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${videoName}" title="Borrar todos los clips">
                         <i class="bi bi-trash"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary ms-2 select-all-clips-btn" data-video="${videoName}" title="Seleccionar todos los clips">
+                        <i class="bi bi-check2-all"></i> Seleccionar todos
                     </button>
                     <button class="btn btn-sm btn-warning ms-2 delete-selected-btn" id="delete-selected-btn-${slug}" style="display:none;">
                         <i class="bi bi-trash"></i> Eliminar seleccionados (<span class="selected-count">0</span>)
@@ -1504,6 +1561,14 @@ function displayGeneratedClips(clips) {
             deleteSelectedBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 deleteSelectedClips(videoName);
+            });
+        }
+
+        const selectAllBtn = headerRow.querySelector('.select-all-clips-btn');
+        if (selectAllBtn) {
+            selectAllBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                selectAllClipsForVideo(videoName, clipPathsForVideo);
             });
         }
 
@@ -1555,6 +1620,12 @@ function createClipElement(clip, globalIndex) {
     selectBox.type = 'checkbox';
     selectBox.className = 'form-check-input clip-select-checkbox';
     clipCard.appendChild(selectBox);
+
+    const selectedSet = selectedClipsMap.get(videoNameForSel);
+    if (selectedSet && selectedSet.has(clip.path)) {
+        selectBox.checked = true;
+        clipCard.classList.add('clip-selected');
+    }
 
     selectBox.addEventListener('change', () => {
         handleClipSelectionChange(videoNameForSel, clip.path, selectBox.checked, clipCard);
@@ -1839,6 +1910,7 @@ async function deleteClip(clipPath, elementId) {
                 selectedClipsMap.delete(videoName);
             }
         }
+        syncClipSelectionUI(videoName);
         updateDeleteSelectedButton(videoName);
         updateClipResultsHeader(videoName);
 
@@ -2067,6 +2139,7 @@ async function generateClips(videoPath, sceneOptions = {}) {
             const totalDuration = Array.isArray(data.clipInfos)
                 ? data.clipInfos.reduce((sum, c) => sum + (c.duration || 0), 0)
                 : 0;
+            const relativeClipPaths = data.clipPaths.map(path => path.replace(/^output\/clips\//, ''));
 
             const group = document.createElement('div');
             group.id = `clips-group-gen-${folderName.replace(/[^a-zA-Z0-9]/g, '-')}`;
@@ -2080,6 +2153,9 @@ async function generateClips(videoPath, sceneOptions = {}) {
                         <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${data.clipPaths.length} clips</span></h5>
                         <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${folderName}" title="Borrar todos los clips">
                             <i class="bi bi-trash"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary ms-2 select-all-clips-btn" data-video="${folderName}" title="Seleccionar todos los clips">
+                            <i class="bi bi-check2-all"></i> Seleccionar todos
                         </button>
                         <button class="btn btn-sm btn-warning ms-2 delete-selected-btn" id="delete-selected-btn-${slugGen}" style="display:none;">
                             <i class="bi bi-trash"></i> Eliminar seleccionados (<span class="selected-count">0</span>)
@@ -2104,6 +2180,13 @@ async function generateClips(videoPath, sceneOptions = {}) {
                     deleteSelectedClips(folderName);
                 });
             }
+            const selectAllBtn = headerRow.querySelector('.select-all-clips-btn');
+            if (selectAllBtn) {
+                selectAllBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectAllClipsForVideo(folderName, relativeClipPaths);
+                });
+            }
 
             const clipsRow = document.createElement('div');
             clipsRow.className = 'row mb-4';
@@ -2117,9 +2200,8 @@ async function generateClips(videoPath, sceneOptions = {}) {
                 });
             }
 
-            data.clipPaths.forEach(clipPath => {
-                const clipName = clipPath.split('/').pop();
-                const clipRelPath = clipPath.replace(/^output\/clips\//, '');
+            relativeClipPaths.forEach(clipRelPath => {
+                const clipName = clipRelPath.split('/').pop();
                 const clipObj = { path: clipRelPath, name: clipName, size: 0, duration: durMap.get(clipRelPath) || 0 };
                 const clipCol = createClipElement(clipObj, 0);
                 clipCol.classList.remove('col-md-3');
@@ -2204,6 +2286,7 @@ async function generateClipsFromFolder(folderPath, sceneOptions = {}) {
                     const totalDuration = Array.isArray(result.clipInfos)
                         ? result.clipInfos.reduce((sum, c) => sum + (c.duration || 0), 0)
                         : 0;
+                    const relativeClipPaths = result.clipPaths.map(path => path.replace(/^output\/clips\//, ''));
 
                     const group = document.createElement('div');
                     group.id = `clips-group-gen-${folderName.replace(/[^a-zA-Z0-9]/g, '-')}`;
@@ -2217,6 +2300,9 @@ async function generateClipsFromFolder(folderPath, sceneOptions = {}) {
                                 <h5 class="mb-0 d-inline">${videoName} <span class="badge bg-secondary">${result.clipPaths.length} clips</span></h5>
                                 <button class="btn btn-sm btn-danger ms-2 delete-all-clips-btn" data-folder="${folderName}" title="Borrar todos los clips">
                                     <i class="bi bi-trash"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary ms-2 select-all-clips-btn" data-video="${folderName}" title="Seleccionar todos los clips">
+                                    <i class="bi bi-check2-all"></i> Seleccionar todos
                                 </button>
                                 <button class="btn btn-sm btn-warning ms-2 delete-selected-btn" id="delete-selected-btn-${slugFolder}" style="display:none;">
                                     <i class="bi bi-trash"></i> Eliminar seleccionados (<span class="selected-count">0</span>)
@@ -2241,6 +2327,13 @@ async function generateClipsFromFolder(folderPath, sceneOptions = {}) {
                             deleteSelectedClips(folderName);
                         });
                     }
+                    const selectAllBtn = headerRow.querySelector('.select-all-clips-btn');
+                    if (selectAllBtn) {
+                        selectAllBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            selectAllClipsForVideo(folderName, relativeClipPaths);
+                        });
+                    }
 
                     // Create a row for the clips
                     const clipsRow = document.createElement('div');
@@ -2256,9 +2349,8 @@ async function generateClipsFromFolder(folderPath, sceneOptions = {}) {
                             });
                         }
 
-                        result.clipPaths.forEach(clipPath => {
-                            const clipName = clipPath.split('/').pop();
-                            const clipRelPath = clipPath.replace(/^output\/clips\//, '');
+                        relativeClipPaths.forEach(clipRelPath => {
+                            const clipName = clipRelPath.split('/').pop();
                             const clipObj = { path: clipRelPath, name: clipName, size: 0, duration: durMap.get(clipRelPath) || 0 };
                             const clipCol = createClipElement(clipObj, 0);
                             clipCol.classList.remove('col-md-3');

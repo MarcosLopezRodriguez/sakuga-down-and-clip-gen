@@ -10,12 +10,12 @@ import { ffprobeCache } from '../utils/ffprobeCache';
  * Opciones para la detección de escenas
  */
 export interface SceneDetectionOptions {
-    minDuration?: number;          // Minimum duration in seconds (default: 0.8)
-    maxDuration?: number;          // Maximum duration in seconds (default: 4.0)
-    threshold?: number;            // Scene change threshold for PySceneDetect (default: 8)
+    minDuration?: number;          // Minimum duration in seconds (default: 1.0)
+    maxDuration?: number;          // Maximum duration in seconds (default: 3.0)
+    threshold?: number;            // Scene change threshold for PySceneDetect (default: 15)
     maxClipsPerVideo?: number;     // Maximum clips to keep per video (default: unlimited)
-    scenePadding?: number;         // Seconds to pad before and after each clip (default: 0.1)
-    minGapBetweenClips?: number;   // Minimum separation between clips in seconds (default: 0.1)
+    scenePadding?: number;         // Seconds to pad before and after each clip (default: 0)
+    minGapBetweenClips?: number;   // Minimum separation between clips in seconds (default: 0)
     detectionMethod?: 'auto' | 'pyscenedetect' | 'ffmpeg'; // Preferred detection strategy
     useFFmpegDetection?: boolean;  // Legacy flag kept for backwards compatibility
 }
@@ -150,10 +150,10 @@ export class ClipGenerator {
 
         const minDuration = typeof sanitized.minDuration === 'number' && Number.isFinite(sanitized.minDuration) && sanitized.minDuration > 0
             ? sanitized.minDuration
-            : 0.8;
+            : 1.0;
         const maxDurationCandidate = typeof sanitized.maxDuration === 'number' && Number.isFinite(sanitized.maxDuration) && sanitized.maxDuration > 0
             ? sanitized.maxDuration
-            : 4.0;
+            : 3.0;
         const maxDuration = Math.max(minDuration, maxDurationCandidate);
 
         sanitized.minDuration = minDuration;
@@ -161,16 +161,16 @@ export class ClipGenerator {
 
         const threshold = typeof sanitized.threshold === 'number' && Number.isFinite(sanitized.threshold)
             ? sanitized.threshold
-            : 8;
+            : 15;
         sanitized.threshold = threshold;
 
         sanitized.scenePadding = typeof sanitized.scenePadding === 'number' && Number.isFinite(sanitized.scenePadding) && sanitized.scenePadding >= 0
             ? sanitized.scenePadding
-            : 0.1;
+            : 0;
 
         sanitized.minGapBetweenClips = typeof sanitized.minGapBetweenClips === 'number' && Number.isFinite(sanitized.minGapBetweenClips) && sanitized.minGapBetweenClips >= 0
             ? sanitized.minGapBetweenClips
-            : 0.1;
+            : 0;
 
         if (typeof sanitized.maxClipsPerVideo === 'number' && Number.isFinite(sanitized.maxClipsPerVideo)) {
             if (sanitized.maxClipsPerVideo <= 0) {
@@ -190,7 +190,7 @@ export class ClipGenerator {
     }
 
     private getFfmpegSceneThreshold(options: SceneDetectionOptions): number {
-        const raw = options.threshold ?? 8;
+        const raw = options.threshold ?? 15;
         const normalized = raw > 1 ? raw / 100 : raw;
         if (!Number.isFinite(normalized) || normalized <= 0) {
             return 0.1;
@@ -460,9 +460,9 @@ export class ClipGenerator {
             return [];
         }
 
-        const minDuration = Math.max(0, options.minDuration ?? 0.8);
-        const padding = Math.max(0, options.scenePadding ?? 0.1);
-        const minGap = Math.max(0, options.minGapBetweenClips ?? 0.1);
+        const minDuration = Math.max(0, options.minDuration ?? 1.0);
+        const padding = Math.max(0, options.scenePadding ?? 0);
+        const minGap = Math.max(0, options.minGapBetweenClips ?? 0);
         const maxClips = options.maxClipsPerVideo && options.maxClipsPerVideo > 0
             ? Math.floor(options.maxClipsPerVideo)
             : 0;
@@ -562,9 +562,9 @@ export class ClipGenerator {
         options: SceneDetectionOptions = {}
     ): Promise<string[]> {
         const sanitizedOptions = this.sanitizeSceneOptions(options);
-        const minDuration = sanitizedOptions.minDuration ?? 0.8;
-        const maxDuration = sanitizedOptions.maxDuration ?? Math.max(minDuration, 4.0);
-        const threshold = sanitizedOptions.threshold ?? 8;
+        const minDuration = sanitizedOptions.minDuration ?? 1.0;
+        const maxDuration = sanitizedOptions.maxDuration ?? Math.max(minDuration, 3.0);
+        const threshold = sanitizedOptions.threshold ?? 15;
 
         console.log(`Detecting scenes in ${videoPath}...`);
         console.log(`Options: minDuration=${minDuration}, maxDuration=${maxDuration}, threshold=${threshold}, maxClips=${sanitizedOptions.maxClipsPerVideo ?? 'unlimited'}`);
@@ -753,8 +753,8 @@ export class ClipGenerator {
         options: SceneDetectionOptions = {}
     ): Promise<string[]> {
         const sanitizedOptions = this.sanitizeSceneOptions(options);
-        const minDuration = sanitizedOptions.minDuration ?? 0.8;
-        const maxDuration = sanitizedOptions.maxDuration ?? Math.max(minDuration, 4.0);
+        const minDuration = sanitizedOptions.minDuration ?? 1.0;
+        const maxDuration = sanitizedOptions.maxDuration ?? Math.max(minDuration, 3.0);
         const threshold = this.getFfmpegSceneThreshold(sanitizedOptions);
 
         console.log(`Detecting scenes with FFmpeg in ${videoPath} using threshold ${threshold}`);

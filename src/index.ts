@@ -33,7 +33,7 @@ export {
 // FunciÃ³n principal que replica la funcionalidad del script Python
 export async function processVideosToPythonClips(
     inputDir: string,
-    options = { minDuration: 1.0, maxDuration: 2.99 }
+    options = { minDuration: 1.0, maxDuration: 3.0 }
 ) {
     console.log('Iniciando procesamiento de videos al estilo Python...');
 
@@ -51,7 +51,7 @@ export async function processVideosToPythonClips(
 // FunciÃ³n para ayudar al usuario a procesar videos descargados previamente
 export async function processDownloadedVideos(
     category: string,
-    options = { minDuration: 1.0, maxDuration: 2.99 }
+    options = { minDuration: 1.0, maxDuration: 3.0 }
 ) {
     const categoryPath = path.join(DOWNLOADS_DIR, category);
 
@@ -173,17 +173,17 @@ yargs(hideBin(process.argv))
             .option('min-duration', {
                 describe: 'Duracion minima de los clips (segundos)',
                 type: 'number',
-                default: 0.8
+                default: 1
             })
             .option('max-duration', {
                 describe: 'Duracion maxima de los clips (segundos)',
                 type: 'number',
-                default: 4.0
+                default: 3
             })
             .option('threshold', {
                 describe: 'Umbral para la deteccion de escenas (PySceneDetect)',
                 type: 'number',
-                default: 18
+                default: 15
             })
             .option('max-clips', {
                 describe: 'Maximo de clips por video',
@@ -193,12 +193,12 @@ yargs(hideBin(process.argv))
             .option('scene-padding', {
                 describe: 'Segundos extra antes y despues de cada clip',
                 type: 'number',
-                default: 0.25
+                default: 0
             })
             .option('min-gap', {
                 describe: 'Separacion minima entre clips (segundos)',
                 type: 'number',
-                default: 0.4
+                default: 0
             })
             .option('method', {
                 describe: 'Metodo de deteccion (auto, pyscenedetect, ffmpeg)',
@@ -305,17 +305,17 @@ yargs(hideBin(process.argv))
             .option('min-duration', {
                 describe: 'Duracion minima de los clips (segundos)',
                 type: 'number',
-                default: 0.8
+                default: 1
             })
             .option('max-duration', {
                 describe: 'Duracion maxima de los clips (segundos)',
                 type: 'number',
-                default: 4.0
+                default: 3
             })
             .option('threshold', {
                 describe: 'Umbral para la deteccion de escenas (PySceneDetect)',
                 type: 'number',
-                default: 18
+                default: 15
             })
             .option('max-clips', {
                 describe: 'Maximo de clips por video',
@@ -325,12 +325,12 @@ yargs(hideBin(process.argv))
             .option('scene-padding', {
                 describe: 'Segundos extra antes y despues de cada clip',
                 type: 'number',
-                default: 0.25
+                default: 0
             })
             .option('min-gap', {
                 describe: 'Separacion minima entre clips (segundos)',
                 type: 'number',
-                default: 0.4
+                default: 0
             })
             .option('method', {
                 describe: 'Metodo de deteccion (auto, pyscenedetect, ffmpeg)',

@@ -297,17 +297,17 @@ export class SakugaDownAndClipGen {
             return Number.isFinite(parsed) ? parsed : undefined;
         };
 
-        const minDuration = Math.max(0.1, parseNumber(body?.minDuration) ?? 0.8);
+        const minDuration = Math.max(0.1, parseNumber(body?.minDuration) ?? 1.0);
         const maxDurationRaw = parseNumber(body?.maxDuration);
-        const maxDuration = Math.max(minDuration, maxDurationRaw ?? 4.0);
+        const maxDuration = Math.max(minDuration, maxDurationRaw ?? 3.0);
         const thresholdRaw = parseNumber(body?.threshold);
-        const threshold = thresholdRaw !== undefined ? thresholdRaw : 8;
+        const threshold = thresholdRaw !== undefined ? thresholdRaw : 15;
 
         const maxClipsRaw = parseNumber(body?.maxClipsPerVideo);
         const maxClips = maxClipsRaw !== undefined && maxClipsRaw > 0 ? Math.floor(maxClipsRaw) : undefined;
 
-        const padding = Math.max(0, parseNumber(body?.scenePadding) ?? 0.1);
-        const gap = Math.max(0, parseNumber(body?.minGapBetweenClips) ?? 0.1);
+        const padding = Math.max(0, parseNumber(body?.scenePadding) ?? 0);
+        const gap = Math.max(0, parseNumber(body?.minGapBetweenClips) ?? 0);
 
         const methodRaw = typeof body?.detectionMethod === 'string'
             ? body.detectionMethod.trim().toLowerCase()
