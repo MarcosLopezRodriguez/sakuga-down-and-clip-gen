@@ -577,6 +577,25 @@ export class ClipGenerator {
 
             const videoBaseName = path.basename(videoPath, path.extname(videoPath));
             const csvFile = path.join(tempDir, `${videoBaseName}-Scenes.csv`);
+            const cleanupTempDir = () => {
+                try {
+                    if (!fs.existsSync(tempDir)) {
+                        return;
+                    }
+
+                    const entries = fs.readdirSync(tempDir);
+                    for (const entry of entries) {
+                        const entryPath = path.join(tempDir, entry);
+                        try {
+                            fs.rmSync(entryPath, { recursive: true, force: true });
+                        } catch (innerErr) {
+                            console.warn(`No se pudo eliminar el temporal ${entryPath}: ${innerErr instanceof Error ? innerErr.message : innerErr}`);
+                        }
+                    }
+                } catch (cleanupErr) {
+                    console.warn(`No se pudo limpiar el directorio temporal ${tempDir}: ${cleanupErr instanceof Error ? cleanupErr.message : cleanupErr}`);
+                }
+            };
 
             const args = [
                 '-m', 'scenedetect',
@@ -656,6 +675,7 @@ export class ClipGenerator {
                         console.log(`Selected ${normalizedSegments.length} clips for generation`);
 
                         if (!normalizedSegments.length) {
+                            cleanupTempDir();
                             resolve([]);
                             return;
                         }
@@ -688,12 +708,15 @@ export class ClipGenerator {
                     } catch (error) {
                         console.error('Error processing scenes:', error);
                         reject(error);
+                    } finally {
+                        cleanupTempDir();
                     }
                 } else {
                     console.error(`PySceneDetect process exited with error code ${code}`);
                     console.error(`stderr: ${stderrData}`);
 
                     if (sanitizedOptions.detectionMethod === 'pyscenedetect') {
+                        cleanupTempDir();
                         reject(new Error(`PySceneDetect failed with code ${code}`));
                         return;
                     }
@@ -704,11 +727,14 @@ export class ClipGenerator {
                     } catch (ffmpegError) {
                         console.error('Error processing FFmpeg fallback:', ffmpegError);
                         reject(ffmpegError);
+                    } finally {
+                        cleanupTempDir();
                     }
                 }
             });
 
             sceneDetectProcess.on('error', (spawnErr) => {
+                cleanupTempDir();
                 reject(new Error(`Failed to start PySceneDetect process: ${spawnErr.message}`));
             });
         });
