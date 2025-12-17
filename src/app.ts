@@ -367,12 +367,19 @@ export class SakugaDownAndClipGen {
             const clipInfos = await Promise.all(
                 clipPaths.map(async (p) => {
                     let duration = 0;
+                    let size = 0;
+                    try {
+                        const stats = await fsp.stat(p);
+                        size = stats.size;
+                    } catch (sizeError) {
+                        console.warn(`No se pudo obtener el tamaño de ${p}:`, sizeError);
+                    }
                     try {
                         duration = await this.getVideoDurationFFprobe(p);
                     } catch (e) {
                         console.warn(`No se pudo obtener la duración de ${p}:`, e);
                     }
-                    return { path: p.replace(/\\/g, '/'), duration };
+                    return { path: p.replace(/\\/g, '/'), duration, size };
                 })
             );
 
@@ -404,7 +411,7 @@ export class SakugaDownAndClipGen {
                 return;
             }
 
-            const results: Array<{ videoPath: string; clipPaths: string[]; clipInfos: { path: string; duration: number }[] }> = [];
+            const results: Array<{ videoPath: string; clipPaths: string[]; clipInfos: { path: string; duration: number; size: number }[] }> = [];
 
             const processDirectory = async (dirPath: string): Promise<void> => {
                 const dirHandle = await fsp.opendir(dirPath);
@@ -419,12 +426,19 @@ export class SakugaDownAndClipGen {
                                 const clipInfos = await Promise.all(
                                     clipPaths.map(async (clipPath) => {
                                         let duration = 0;
+                                        let size = 0;
+                                        try {
+                                            const stats = await fsp.stat(clipPath);
+                                            size = stats.size;
+                                        } catch (sizeError) {
+                                            console.warn(`No se pudo obtener el tamaño de ${clipPath}:`, sizeError);
+                                        }
                                         try {
                                             duration = await this.getVideoDurationFFprobe(clipPath);
                                         } catch (infoError) {
                                             console.warn(`No se pudo obtener la duracion de ${clipPath}:`, infoError);
                                         }
-                                        return { path: clipPath.replace(/\\/g, '/'), duration };
+                                        return { path: clipPath.replace(/\\/g, '/'), duration, size };
                                     })
                                 );
                                 results.push({
@@ -1243,4 +1257,3 @@ export class SakugaDownAndClipGen {
 }
 
 export default SakugaDownAndClipGen;
-

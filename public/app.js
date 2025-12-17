@@ -1609,6 +1609,9 @@ function createClipElement(clip, globalIndex) {
     clipCol.dataset.clipPath = clip.path;
     const videoNameForSel = clip.path.split('/')[0];
     clipCol.dataset.videoName = videoNameForSel;
+    if (typeof clip.size === 'number') {
+        clipCol.dataset.size = String(clip.size);
+    }
     if (typeof clip.duration === 'number') {
         clipCol.dataset.duration = clip.duration;
     }
@@ -1730,7 +1733,9 @@ function createClipElement(clip, globalIndex) {
 
     const clipInfo = document.createElement('p');
     clipInfo.className = 'card-text small text-muted';
-    clipInfo.textContent = formatFileSize(clip.size);
+    const sizeLabel = formatFileSize(typeof clip.size === 'number' ? clip.size : 0);
+    const durationLabel = typeof clip.duration === 'number' ? formatDuration(clip.duration) : '';
+    clipInfo.textContent = durationLabel ? `${sizeLabel} | ${durationLabel}` : sizeLabel;
 
     // Play video when clicking on the card
     clipCard.addEventListener('click', (e) => {
@@ -2092,6 +2097,22 @@ async function startDownload(params) {
     }
 }
 
+function buildClipInfoMap(clipInfos) {
+    const infoMap = new Map();
+    if (!Array.isArray(clipInfos)) return infoMap;
+
+    clipInfos.forEach(info => {
+        if (!info || !info.path) return;
+        const rel = info.path.replace(/^output\/clips\//, '');
+        infoMap.set(rel, {
+            duration: typeof info.duration === 'number' ? info.duration : 0,
+            size: typeof info.size === 'number' ? info.size : 0
+        });
+    });
+
+    return infoMap;
+}
+
 // Generate clips from a video
 async function generateClips(videoPath, sceneOptions = {}) {
     const statusEl = document.getElementById('generationStatus');
@@ -2192,17 +2213,17 @@ async function generateClips(videoPath, sceneOptions = {}) {
             clipsRow.className = 'row mb-4';
             group.appendChild(clipsRow);
 
-            const durMap = new Map();
-            if (Array.isArray(data.clipInfos)) {
-                data.clipInfos.forEach(info => {
-                    const rel = info.path.replace(/^output\/clips\//, '');
-                    durMap.set(rel, info.duration);
-                });
-            }
+            const infoMap = buildClipInfoMap(data.clipInfos);
 
             relativeClipPaths.forEach(clipRelPath => {
                 const clipName = clipRelPath.split('/').pop();
-                const clipObj = { path: clipRelPath, name: clipName, size: 0, duration: durMap.get(clipRelPath) || 0 };
+                const clipInfo = infoMap.get(clipRelPath) || {};
+                const clipObj = {
+                    path: clipRelPath,
+                    name: clipName,
+                    size: typeof clipInfo.size === 'number' ? clipInfo.size : 0,
+                    duration: typeof clipInfo.duration === 'number' ? clipInfo.duration : 0
+                };
                 const clipCol = createClipElement(clipObj, 0);
                 clipCol.classList.remove('col-md-3');
                 clipCol.classList.add('col-md-4');
@@ -2341,17 +2362,17 @@ async function generateClipsFromFolder(folderPath, sceneOptions = {}) {
                     group.appendChild(clipsRow);
                     clipsRow.id = `clips-group-gen-${folderName.replace(/[^a-zA-Z0-9]/g, '-')}`;
 
-                        const durMap = new Map();
-                        if (Array.isArray(result.clipInfos)) {
-                            result.clipInfos.forEach(info => {
-                                const rel = info.path.replace(/^output\/clips\//, '');
-                                durMap.set(rel, info.duration);
-                            });
-                        }
+                        const infoMap = buildClipInfoMap(result.clipInfos);
 
                         relativeClipPaths.forEach(clipRelPath => {
                             const clipName = clipRelPath.split('/').pop();
-                            const clipObj = { path: clipRelPath, name: clipName, size: 0, duration: durMap.get(clipRelPath) || 0 };
+                            const clipInfo = infoMap.get(clipRelPath) || {};
+                            const clipObj = {
+                                path: clipRelPath,
+                                name: clipName,
+                                size: typeof clipInfo.size === 'number' ? clipInfo.size : 0,
+                                duration: typeof clipInfo.duration === 'number' ? clipInfo.duration : 0
+                            };
                             const clipCol = createClipElement(clipObj, 0);
                             clipCol.classList.remove('col-md-3');
                             clipCol.classList.add('col-md-4');
@@ -2394,4 +2415,20 @@ function formatFileSize(bytes) {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
 
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function formatDuration(seconds) {
+    if (seconds === undefined || seconds === null || isNaN(seconds)) return '0s';
+
+    const totalSeconds = Math.max(0, Math.round(seconds));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+
+    const parts = [];
+    if (hours) parts.push(`${hours}h`);
+    if (minutes || hours) parts.push(`${minutes}m`);
+    parts.push(`${secs}s`);
+
+    return parts.join(' ');
 }
