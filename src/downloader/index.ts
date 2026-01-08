@@ -5,6 +5,8 @@ import { parse as urlParse } from 'url';
 import * as cheerio from 'cheerio';
 import { RateLimitedHttpClient } from '../utils/httpClient';
 import { EventEmitter } from 'events';
+import { logger } from '../utils';
+
 
 export class Downloader extends EventEmitter {
     private baseUrl: string;
@@ -56,7 +58,7 @@ export class Downloader extends EventEmitter {
             cookieRefreshUrl: cookieUrl,
             playwrightWaitMs,
             playwrightNavigationTimeoutMs: playwrightNavTimeoutMs,
-            logger: (message) => console.log(`[DownloaderHttp] ${message}`)
+            logger: (message) => logger.debug(`[DownloaderHttp] ${message}`)
         });
 
         if (!fs.existsSync(outputDirectory)) {
@@ -67,7 +69,7 @@ export class Downloader extends EventEmitter {
             this.httpClient.primeSession()
                 .then(() => { this.httpSessionPrimed = true; })
                 .catch(err => {
-                    console.warn('Unable to prime HTTP session via Playwright:', err?.message || err);
+                    logger.warn('Unable to prime HTTP session via Playwright:', err?.message || err);
                     this.httpSessionPrimed = false;
                 });
         }
@@ -82,7 +84,7 @@ export class Downloader extends EventEmitter {
             await this.httpClient.primeSession();
         } catch (err: any) {
             this.httpSessionPrimed = false;
-            console.warn('Failed to prepare HTTP session:', err?.message || err);
+            logger.warn('Failed to prepare HTTP session:', err?.message || err);
         }
     }
 
@@ -116,23 +118,23 @@ export class Downloader extends EventEmitter {
 
     private async createDirectorySafely(dirPath: string): Promise<void> {
         try {
-            console.log(`Creating directory: ${dirPath}`);
+            logger.debug(`Creating directory: ${dirPath}`);
             await fsp.mkdir(dirPath, { recursive: true });
-            console.log(`Directory ensured: ${dirPath}`);
+            logger.debug(`Directory ensured: ${dirPath}`);
         } catch (error: any) {
-            console.error(`Error creating directory ${dirPath}:`, error);
+            logger.error(`Error creating directory ${dirPath}:`, error);
 
             const safeDirName = this.sanitizeDirectoryName(path.basename(dirPath));
             const fallbackPath = path.join(path.dirname(dirPath), safeDirName);
 
             if (fallbackPath !== dirPath) {
-                console.log(`Attempting fallback directory: ${fallbackPath}`);
+                logger.info(`Attempting fallback directory: ${fallbackPath}`);
                 try {
                     await fsp.mkdir(fallbackPath, { recursive: true });
-                    console.log(`Fallback directory created: ${fallbackPath}`);
+                    logger.info(`Fallback directory created: ${fallbackPath}`);
                     return;
                 } catch (fallbackError) {
-                    console.error(`Fallback directory creation also failed:`, fallbackError);
+                    logger.error(`Fallback directory creation also failed:`, fallbackError);
                 }
             }
 
@@ -144,20 +146,20 @@ export class Downloader extends EventEmitter {
         try {
             // Verificar que la ruta no exceda los límites de Windows
             if (filePath.length > 260) {
-                console.warn(`Path too long (${filePath.length} chars): ${filePath}`);
+                logger.warn(`Path too long (${filePath.length} chars): ${filePath}`);
                 return false;
             }
 
             // Verificar que no contenga caracteres inválidos
             const invalidChars = /[<>:"|?*]/;
             if (invalidChars.test(filePath)) {
-                console.warn(`Invalid characters in path: ${filePath}`);
+                logger.warn(`Invalid characters in path: ${filePath}`);
                 return false;
             }
 
             return true;
         } catch (error) {
-            console.error(`Error validating path: ${filePath}`, error);
+            logger.error(`Error validating path: ${filePath}`, error);
             return false;
         }
     }
@@ -178,7 +180,7 @@ export class Downloader extends EventEmitter {
                 throw new Error('Invalid URL');
             }
 
-            console.log(`Fetching posts from ${url}...`);
+            logger.info(`Fetching posts from ${url}...`);
 
             await this.ensureHttpSession();
 
@@ -190,7 +192,7 @@ export class Downloader extends EventEmitter {
 
             // Make sure we have data before parsing
             if (!response.data) {
-                console.log(`No data returned from ${url}`);
+                logger.warn(`No data returned from ${url}`);
                 return [];
             }
 
@@ -199,12 +201,12 @@ export class Downloader extends EventEmitter {
             try {
                 $ = cheerio.load(response.data);
             } catch (error) {
-                console.error(`Failed to parse HTML from ${url}:`, error);
+                logger.error(`Failed to parse HTML from ${url}:`, error);
                 return [];
             }
 
             if (!$) {
-                console.error(`Failed to initialize Cheerio for ${url}`);
+                logger.error(`Failed to initialize Cheerio for ${url}`);
                 return [];
             }
 
@@ -218,13 +220,13 @@ export class Downloader extends EventEmitter {
                     }
                 });
             } catch (error) {
-                console.error(`Error finding post links in ${url}:`, error);
+                logger.error(`Error finding post links in ${url}:`, error);
             }
 
-            console.log(`Found ${posts.length} posts on ${url}`);
+            logger.info(`Found ${posts.length} posts on ${url}`);
             return posts;
         } catch (error) {
-            console.error(`Error getting posts from page ${url}:`, error);
+            logger.error(`Error getting posts from page ${url}:`, error);
             return [];
         }
     }
@@ -235,7 +237,7 @@ export class Downloader extends EventEmitter {
                 throw new Error('Invalid URL');
             }
 
-            console.log(`Fetching video URL from ${postUrl}...`);
+            logger.info(`Fetching video URL from ${postUrl}...`);
 
             await this.ensureHttpSession();
 
@@ -247,7 +249,7 @@ export class Downloader extends EventEmitter {
 
             // Make sure we have data before parsing
             if (!response.data) {
-                console.log(`No data returned from ${postUrl}`);
+                logger.warn(`No data returned from ${postUrl}`);
                 return null;
             }
 
@@ -256,12 +258,12 @@ export class Downloader extends EventEmitter {
             try {
                 $ = cheerio.load(response.data);
             } catch (error) {
-                console.error(`Failed to parse HTML from ${postUrl}:`, error);
+                logger.error(`Failed to parse HTML from ${postUrl}:`, error);
                 return null;
             }
 
             if (!$) {
-                console.error(`Failed to initialize Cheerio for ${postUrl}`);
+                logger.error(`Failed to initialize Cheerio for ${postUrl}`);
                 return null;
             }
 
@@ -273,12 +275,12 @@ export class Downloader extends EventEmitter {
                     videoUrl = new URL(source.attr('src') as string, this.baseUrl).toString();
                 }
             } catch (error) {
-                console.error(`Error finding video source in ${postUrl}:`, error);
+                logger.error(`Error finding video source in ${postUrl}:`, error);
             }
 
             return videoUrl;
         } catch (error) {
-            console.error(`Error getting video URL from post ${postUrl}:`, error);
+            logger.error(`Error getting video URL from post ${postUrl}:`, error);
             return null;
         }
     }
@@ -359,7 +361,7 @@ export class Downloader extends EventEmitter {
             // Verificar si el archivo ya existe
             try {
                 const existingStats = await fsp.stat(finalPath);
-                console.log(`File already exists: ${newFilename}`);
+                logger.info(`File already exists: ${newFilename}`);
                 this.videoCounter += 1;
 
                 // Emitir evento de descarga completada (para archivos que ya existen)
@@ -432,7 +434,7 @@ export class Downloader extends EventEmitter {
             return new Promise((resolve, reject) => {
                 writer.on('finish', async () => {
                     try {
-                        console.log(`Saved as: ${newFilename}`);
+                        logger.info(`Saved as: ${newFilename}`);
                         this.videoCounter += 1;
                         const savedStats = await fsp.stat(finalPath);
 
@@ -453,7 +455,7 @@ export class Downloader extends EventEmitter {
                     }
                 });
                 writer.on('error', (err) => {
-                    console.error('Error downloading video:', err);
+                    logger.error('Error downloading video:', err);
 
                     // Emitir evento de error
                     this.emit('downloadError', {
@@ -467,7 +469,7 @@ export class Downloader extends EventEmitter {
                 });
             });
         } catch (error: any) {
-            console.error(`Error downloading video ${url}:`, error);
+            logger.error(`Error downloading video ${url}:`, error);
 
             // Emitir evento de error
             this.emit('downloadError', {
@@ -498,7 +500,7 @@ export class Downloader extends EventEmitter {
 
             try {
                 const existingStats = await fsp.stat(finalPath);
-                console.log(`File already exists: ${newFilename}`);
+                logger.info(`File already exists: ${newFilename}`);
                 this.emit('downloadComplete', {
                     url: videoUrl,
                     tag,
@@ -575,7 +577,7 @@ export class Downloader extends EventEmitter {
 
             return finalPath;
         } catch (err: any) {
-            console.error(`Error processing post ${postUrl}:`, err);
+            logger.error(`Error processing post ${postUrl}:`, err);
             this.emit('downloadError', {
                 url: postUrl,
                 tag,
@@ -591,7 +593,7 @@ export class Downloader extends EventEmitter {
         let page = 1;
         const downloadedPaths: string[] = [];
 
-        console.log(`\n===== Processing: ${tag} =====`);
+        logger.info(`\n===== Processing: ${tag} =====`);
         // Emitir evento de inicio de procesamiento de etiqueta
         this.emit('tagProcessingStarted', { tag, message: `Iniciando procesamiento de etiqueta: ${tag}` });
 
@@ -604,7 +606,7 @@ export class Downloader extends EventEmitter {
                     break;
                 }
 
-                console.log(`Processing page ${page}...`);
+                logger.info(`Processing page ${page}...`);
 
                 // Emitir evento de progreso solo si hay resultados
                 this.emit('downloadProgress', {
@@ -646,7 +648,7 @@ export class Downloader extends EventEmitter {
             });
 
         } catch (error: any) {
-            console.error(`Error processing tag ${tag}:`, error);
+            logger.error(`Error processing tag ${tag}:`, error);
             this.emit('downloadError', {
                 tag,
                 status: 'error',
@@ -685,7 +687,7 @@ export class Downloader extends EventEmitter {
 
             return allDownloadedPaths;
         } catch (error) {
-            console.error(`Error processing tags file:`, error);
+            logger.error(`Error processing tags file:`, error);
             throw error;
         }
     }

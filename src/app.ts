@@ -4,6 +4,7 @@ import { Downloader } from './downloader';
 import { ClipGenerator, SceneDetectionOptions } from './clipGenerator';
 import { AudioAnalyzer } from './audioAnalyzer';
 import { BeatSyncGenerator } from './beatSyncGenerator';
+import { logger } from './utils';
 import * as path from 'path';
 import * as fs from 'fs';
 const fsp = fs.promises;
@@ -118,12 +119,12 @@ export class SakugaDownAndClipGen {
      */
     private setupWebSockets() {
         this.io.on('connection', (socket: Socket) => {
-            console.log('Cliente conectado');
+            logger.info('Cliente conectado');
 
             // Eventos personalizados aquÃ­ si son necesarios
 
             socket.on('disconnect', () => {
-                console.log('Cliente desconectado');
+                logger.info('Cliente desconectado');
             });
         });
 
@@ -223,7 +224,7 @@ export class SakugaDownAndClipGen {
                 .filter(item => item.type === 'video');
             res.json(clips);
         } catch (error: any) {
-            console.error('Error obteniendo clips:', error);
+            logger.error('Error obteniendo clips:', error);
             res.status(500).json({ error: error.message });
         }
     }
@@ -236,7 +237,7 @@ export class SakugaDownAndClipGen {
                 return;
             }
 
-            console.log(`Descargando video desde: ${url}`);
+            logger.info(`Descargando video desde: ${url}`);
 
             // Responder de inmediato
             res.json({ success: true, message: 'Descarga iniciada' });
@@ -263,7 +264,7 @@ export class SakugaDownAndClipGen {
                 return;
             }
 
-            console.log(`Procesando etiquetas: ${tags.join(', ')}`);
+            logger.info(`Procesando etiquetas: ${tags.join(', ')}`);
 
             // Responder de inmediato
             res.json({ success: true, message: 'Descarga de etiquetas iniciada' });
@@ -372,12 +373,12 @@ export class SakugaDownAndClipGen {
                         const stats = await fsp.stat(p);
                         size = stats.size;
                     } catch (sizeError) {
-                        console.warn(`No se pudo obtener el tamaño de ${p}:`, sizeError);
+                        logger.warn(`No se pudo obtener el tamaño de ${p}:`, sizeError);
                     }
                     try {
                         duration = await this.getVideoDurationFFprobe(p);
                     } catch (e) {
-                        console.warn(`No se pudo obtener la duración de ${p}:`, e);
+                        logger.warn(`No se pudo obtener la duración de ${p}:`, e);
                     }
                     return { path: p.replace(/\\/g, '/'), duration, size };
                 })
@@ -436,7 +437,7 @@ export class SakugaDownAndClipGen {
                                         try {
                                             duration = await this.getVideoDurationFFprobe(clipPath);
                                         } catch (infoError) {
-                                            console.warn(`No se pudo obtener la duracion de ${clipPath}:`, infoError);
+                                            logger.warn(`No se pudo obtener la duracion de ${clipPath}:`, infoError);
                                         }
                                         return { path: clipPath.replace(/\\/g, '/'), duration, size };
                                     })
@@ -447,7 +448,7 @@ export class SakugaDownAndClipGen {
                                     clipInfos
                                 });
                             } catch (videoError) {
-                                console.error(`Error generando clips para ${fullPath}:`, videoError);
+                                logger.error(`Error generando clips para ${fullPath}:`, videoError);
                             }
                         }
                     }
@@ -463,7 +464,7 @@ export class SakugaDownAndClipGen {
 
             res.json({ success: true, results, sceneOptions });
         } catch (error: any) {
-            console.error('Error en la generación de clips desde carpeta:', error);
+            logger.error('Error en la generación de clips desde carpeta:', error);
             res.status(500).json({ error: error.message });
         }
     }
@@ -482,7 +483,7 @@ export class SakugaDownAndClipGen {
             let results: Map<string, string[]>;
 
             if (url) {
-                console.log(`Procesando URL: ${url}`);
+                logger.info(`Procesando URL: ${url}`);
                 if (url.includes('/post?tags=')) {
                     const tagName = new URL(url).searchParams.get('tags') || '';
                     results = await this.downloadTagsAndGenerateClips([tagName], sceneOptions);
@@ -492,7 +493,7 @@ export class SakugaDownAndClipGen {
                     results.set(url, clipPaths);
                 }
             } else {
-                console.log(`Procesando etiquetas: ${tags.join(', ')}`);
+                logger.info(`Procesando etiquetas: ${tags.join(', ')}`);
                 results = await this.downloadTagsAndGenerateClips(tags, sceneOptions);
             }
 
@@ -512,7 +513,7 @@ export class SakugaDownAndClipGen {
         const clipsBaseDir = this.clipDirectory; // output/clips
 
         if (!fs.existsSync(clipsBaseDir)) {
-            console.log(`Directory ${clipsBaseDir} does not exist.`);
+            logger.info(`Directory ${clipsBaseDir} does not exist.`);
             res.status(200).json([]); // Return empty array if base directory doesn't exist
             return;
         }
@@ -524,7 +525,7 @@ export class SakugaDownAndClipGen {
                 .map(entry => entry.name);
             res.json(folders);
         } catch (error: any) {
-            console.error(`Error reading directory ${clipsBaseDir}:`, error);
+            logger.error(`Error reading directory ${clipsBaseDir}:`, error);
             res.status(500).json({ error: `Failed to list folders in ${clipsBaseDir}` });
         }
     }
@@ -542,7 +543,7 @@ export class SakugaDownAndClipGen {
             const folders = entries.filter(e => e.isDirectory()).map(e => e.name);
             res.json(folders);
         } catch (error: any) {
-            console.error(`Error reading directory ${baseDir}:`, error);
+            logger.error(`Error reading directory ${baseDir}:`, error);
             res.status(500).json({ error: `Failed to list folders in ${baseDir}` });
         }
     }
@@ -582,7 +583,7 @@ export class SakugaDownAndClipGen {
                 fs.mkdirSync(outputDir, { recursive: true });
             }
         } catch (mkdirError: any) {
-            console.error(`Error creating output directory ${outputDir}:`, mkdirError); res.status(500).json({
+            logger.error(`Error creating output directory ${outputDir}:`, mkdirError); res.status(500).json({
                 status: "error",
                 message: "Failed to create output directory for processed videos.",
                 details: mkdirError.message
@@ -602,7 +603,7 @@ export class SakugaDownAndClipGen {
         } const pythonScriptPath = path.resolve(__dirname, '../rename_clips.py'); // Script is at project root
 
         if (!fs.existsSync(pythonScriptPath)) {
-            console.error(`Python script not found at ${pythonScriptPath}`);
+            logger.error(`Python script not found at ${pythonScriptPath}`);
             res.status(500).json({
                 status: "error",
                 message: "Python script 'rename_clips.py' not found on the server.",
@@ -616,7 +617,7 @@ export class SakugaDownAndClipGen {
             '--output_dir', outputDir
         ];
 
-        console.log(`Executing script: python ${pythonScriptPath} ${scriptArgs.join(' ')}`);
+        logger.info(`Executing script: python ${pythonScriptPath} ${scriptArgs.join(' ')}`);
 
         const pythonProcess = spawn('python', [pythonScriptPath, ...scriptArgs]);
 
@@ -632,8 +633,8 @@ export class SakugaDownAndClipGen {
         });
 
         pythonProcess.on('close', (code) => {
-            console.log(`Python script stdout:\n${stdoutData}`);
-            console.error(`Python script stderr:\n${stderrData}`);
+            logger.info(`Python script stdout:\n${stdoutData}`);
+            if (stderrData) logger.error(`Python script stderr:\n${stderrData}`);
             if (code === 0) {
                 res.status(200).json({
                     status: "success",
@@ -649,7 +650,7 @@ export class SakugaDownAndClipGen {
         });
 
         pythonProcess.on('error', (err) => {
-            console.error('Failed to start Python script:', err);
+            logger.error('Failed to start Python script:', err);
             res.status(500).json({
                 status: "error",
                 message: "Failed to start video processing script.",
@@ -673,7 +674,7 @@ export class SakugaDownAndClipGen {
             // Construir la ruta completa al archivo
             const fullPath = path.join(this.clipDirectory, clipPath);
 
-            console.log(`Intentando eliminar clip: ${fullPath}`);
+            logger.info(`Intentando eliminar clip: ${fullPath}`);
 
             // Verificar que el archivo existe y que estÃ© dentro del directorio de clips (seguridad)
             if (!fs.existsSync(fullPath)) {
@@ -692,7 +693,7 @@ export class SakugaDownAndClipGen {
 
             // Eliminar el archivo
             fs.unlinkSync(fullPath);
-            console.log(`Clip eliminado: ${clipPath}`);
+            logger.info(`Clip eliminado: ${clipPath}`);
 
             // Verificar si la carpeta del clip estÃ¡ vacÃ­a y eliminarla si lo estÃ¡
             const clipDir = path.dirname(fullPath);
@@ -702,9 +703,9 @@ export class SakugaDownAndClipGen {
             if (remainingFiles.length === 0 && clipDir !== this.clipDirectory) {
                 try {
                     fs.rmdirSync(clipDir);
-                    console.log(`Carpeta vacÃ­a eliminada: ${clipDir}`);
+                    logger.info(`Carpeta vacÃ­a eliminada: ${clipDir}`);
                 } catch (rmDirError) {
-                    console.warn(`No se pudo eliminar la carpeta vacÃ­a: ${clipDir}`, rmDirError);
+                    logger.warn(`No se pudo eliminar la carpeta vacÃ­a: ${clipDir}`, rmDirError);
                 }
             }
 
@@ -714,7 +715,7 @@ export class SakugaDownAndClipGen {
 
             res.json({ success: true, message: 'Clip eliminado correctamente' });
         } catch (error: any) {
-            console.error('Error al eliminar clip:', error);
+            logger.error('Error al eliminar clip:', error);
             res.status(500).json({ error: error.message });
         }
     }
@@ -732,7 +733,7 @@ export class SakugaDownAndClipGen {
             }
 
             const fullFolderPath = path.join(this.clipDirectory, folderPath);
-            console.log(`Intentando eliminar carpeta de clips: ${fullFolderPath}`);
+            logger.info(`Intentando eliminar carpeta de clips: ${fullFolderPath}`);
 
             if (!fs.existsSync(fullFolderPath) || !fs.statSync(fullFolderPath).isDirectory()) {
                 res.status(404).json({ error: 'Carpeta no encontrada' });
@@ -748,14 +749,14 @@ export class SakugaDownAndClipGen {
             }
 
             fs.rmSync(fullFolderPath, { recursive: true, force: true });
-            console.log(`Carpeta de clips eliminada: ${folderPath}`);
+            logger.info(`Carpeta de clips eliminada: ${folderPath}`);
 
             const clips = (await this.getDirectoryContentsWithDuration(this.clipDirectory)).filter(item => item.type === 'video');
             this.io.emit('directoriesUpdated', { type: 'clips', contents: clips });
 
             res.json({ success: true, message: 'Clips eliminados correctamente' });
         } catch (error: any) {
-            console.error('Error al eliminar carpeta de clips:', error);
+            logger.error('Error al eliminar carpeta de clips:', error);
             res.status(500).json({ error: error.message });
         }
     }
@@ -773,7 +774,7 @@ export class SakugaDownAndClipGen {
             }
 
             const fullPath = path.join(this.downloadDirectory, videoPath);
-            console.log(`Intentando eliminar video: ${fullPath}`);
+            logger.info(`Intentando eliminar video: ${fullPath}`);
 
             if (!fs.existsSync(fullPath)) {
                 res.status(404).json({ error: 'Video no encontrado' });
@@ -789,7 +790,7 @@ export class SakugaDownAndClipGen {
             }
 
             fs.unlinkSync(fullPath);
-            console.log(`Video eliminado: ${videoPath}`);
+            logger.info(`Video eliminado: ${videoPath}`);
 
             const videoDir = path.dirname(fullPath);
             if (fs.existsSync(videoDir) && videoDir !== this.downloadDirectory) {
@@ -797,9 +798,9 @@ export class SakugaDownAndClipGen {
                 if (remaining.length === 0) {
                     try {
                         fs.rmdirSync(videoDir);
-                        console.log(`Carpeta vacÃ­a eliminada: ${videoDir}`);
+                        logger.info(`Carpeta vacÃ­a eliminada: ${videoDir}`);
                     } catch (e) {
-                        console.warn(`No se pudo eliminar la carpeta vacÃ­a: ${videoDir}`, e);
+                        logger.warn(`No se pudo eliminar la carpeta vacÃ­a: ${videoDir}`, e);
                     }
                 }
             }
@@ -809,7 +810,7 @@ export class SakugaDownAndClipGen {
 
             res.json({ success: true, message: 'Video eliminado correctamente' });
         } catch (error: any) {
-            console.error('Error al eliminar video:', error);
+            logger.error('Error al eliminar video:', error);
             res.status(500).json({ error: error.message });
         }
     }
@@ -857,7 +858,7 @@ export class SakugaDownAndClipGen {
      */
     public startServer(): void {
         this.server.listen(this.port, () => {
-            console.log(`Servidor iniciado en http://localhost:${this.port}`);
+            logger.info(`Servidor iniciado en http://localhost:${this.port}`);
         });
     }
 
@@ -1013,10 +1014,10 @@ export class SakugaDownAndClipGen {
         sceneOptions: SceneDetectionOptions = {}
     ): Promise<string[]> {
         try {
-            console.log(`Descargando video desde: ${videoUrl}`);
+            logger.info(`Descargando video desde: ${videoUrl}`);
             const videoPath = await this.downloader.downloadVideo(videoUrl);
 
-            console.log(`Generando clips del video descargado: ${videoPath}`);
+            logger.info(`Generando clips del video descargado: ${videoPath}`);
 
             if (timeSegments.length === 0) {
                 return await this.clipGenerator.generateClipsForVideo(videoPath, sceneOptions);
@@ -1025,7 +1026,7 @@ export class SakugaDownAndClipGen {
             const clipPaths = await this.clipGenerator.generateMultipleClips(videoPath, timeSegments);
             return clipPaths;
         } catch (error) {
-            console.error('Error en el proceso de descarga y generación de clips:', error);
+            logger.error('Error en el proceso de descarga y generación de clips:', error);
             throw error;
         }
     }
@@ -1049,7 +1050,7 @@ export class SakugaDownAndClipGen {
 
         for (const tag of tags) {
             try {
-                console.log(`Procesando etiqueta: ${tag}`);
+                logger.info(`Procesando etiqueta: ${tag}`);
                 const tagUrl = `${this.downloader['baseUrl']}/post?tags=${tag}`;
 
                 const videoPaths = await this.downloader.downloadVideosFromTag(tagUrl);
@@ -1059,11 +1060,11 @@ export class SakugaDownAndClipGen {
                         const clipPaths = await this.clipGenerator.generateClipsForVideo(videoPath, normalizedOptions);
                         resultsMap.set(videoPath, clipPaths);
                     } catch (clipError) {
-                        console.error(`Error generando clips para ${videoPath}:`, clipError);
+                        logger.error(`Error generando clips para ${videoPath}:`, clipError);
                     }
                 }
             } catch (error) {
-                console.error(`Error procesando la etiqueta ${tag}:`, error);
+                logger.error(`Error procesando la etiqueta ${tag}:`, error);
             }
         }
 
@@ -1091,7 +1092,7 @@ export class SakugaDownAndClipGen {
 
             return await this.downloadTagsAndGenerateClips(tags, sceneOptions);
         } catch (error) {
-            console.error('Error procesando archivo de etiquetas:', error);
+            logger.error('Error procesando archivo de etiquetas:', error);
             throw error;
         }
     }
@@ -1104,7 +1105,7 @@ export class SakugaDownAndClipGen {
 
         try {
             if (!fs.existsSync(videosDirectory)) {
-                console.error(`Error: Videos directory does not exist at ${videosDirectory}`);
+                logger.error(`Error: Videos directory does not exist at ${videosDirectory}`);
                 throw new Error(`El directorio de videos no existe: ${videosDirectory}`);
             }
 
@@ -1120,10 +1121,10 @@ export class SakugaDownAndClipGen {
                     const fullPath = path.join(currentDirPath, entry.name);
 
                     if (entry.isDirectory()) {
-                        console.log(`Scanning subdirectory: ${fullPath}`);
+                        logger.debug(`Scanning subdirectory: ${fullPath}`);
                         await processDirectory(fullPath);
                     } else if (entry.isFile() && /\.(mp4|webm|mkv)$/i.test(entry.name)) {
-                        console.log(`Procesando video: ${fullPath}`);
+                        logger.info(`Procesando video: ${fullPath}`);
                         this.io.emit('clipGenerationStatus', { video: fullPath, status: 'processing' });
 
                         try {
@@ -1131,7 +1132,7 @@ export class SakugaDownAndClipGen {
                             this.io.emit('clipGenerationStatus', { video: fullPath, status: 'completed', clips: clipPaths.length });
                             resultsMap.set(fullPath, clipPaths);
                         } catch (clipError) {
-                            console.error(`Error generando clips para ${fullPath}:`, clipError);
+                            logger.error(`Error generando clips para ${fullPath}:`, clipError);
                             this.io.emit('clipGenerationError', { video: fullPath, error: (clipError as Error).message });
                         }
                     }
@@ -1141,7 +1142,7 @@ export class SakugaDownAndClipGen {
             await processDirectory(videosDirectory);
 
         } catch (error) {
-            console.error(`Error procesando directorio de videos: ${videosDirectory}`, error);
+            logger.error(`Error procesando directorio de videos: ${videosDirectory}`, error);
             this.io.emit('clipGenerationError', { directory: videosDirectory, error: (error as Error).message });
             throw error;
         }
@@ -1163,11 +1164,11 @@ export class SakugaDownAndClipGen {
         const audioFilePath = req.file.path;
 
         try {
-            console.log(`Analyzing audio file: ${audioFilePath}`);
+            logger.info(`Analyzing audio file: ${audioFilePath}`);
             const analysisResult = await this.audioAnalyzer.analyzeBeats(audioFilePath);
             res.json({ success: true, analysis: analysisResult, audioFileName: path.basename(audioFilePath) });
         } catch (error: any) {
-            console.error(`Error analyzing audio file ${audioFilePath}:`, error);
+            logger.error(`Error analyzing audio file ${audioFilePath}:`, error);
             res.status(500).json({ success: false, error: `Failed to analyze audio: ${error.message}` });
         }
     }
@@ -1218,7 +1219,7 @@ export class SakugaDownAndClipGen {
                 return;
             }
 
-            console.log(`Generating beat-matched video: ${sanitizedOutputVideoName}`);
+            logger.info(`Generating beat-matched video: ${sanitizedOutputVideoName}`);
             // this.clipDirectory is the base for sourceClipFolderPaths
             const sanitizedAudioFileName = path.basename(audioFileName);
             const audioFilePath = path.join(this.tempAudioDirectory, sanitizedAudioFileName);
@@ -1245,12 +1246,12 @@ export class SakugaDownAndClipGen {
 
             fs.unlink(audioFilePath, (err) => {
                 if (err) {
-                    console.error(`Failed to delete temporary audio file ${audioFilePath}:`, err);
+                    logger.error(`Failed to delete temporary audio file ${audioFilePath}:`, err);
                 }
             });
 
         } catch (error: any) {
-            console.error('Error generating beat-matched video:', error);
+            logger.error('Error generating beat-matched video:', error);
             res.status(500).json({ success: false, error: `Failed to generate beat-matched video: ${error.message}` });
         }
     }

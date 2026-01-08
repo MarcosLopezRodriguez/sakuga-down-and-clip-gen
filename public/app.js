@@ -2,14 +2,67 @@ let socket;
 let currentDownloads = new Map();
 let allDownloadedVideos = [];
 let downloadsInProgress = false;
-// Track tags that already completed to avoid stale UI updates
-let completedTags = new Set();
 
 // Helper: stable key for tracking downloads (prefer tag over url)
 function getDownloadKey(data) {
     if (data && typeof data.tag === 'string' && data.tag.length > 0) return `tag:${data.tag}`;
     if (data && typeof data.url === 'string' && data.url.length > 0) return `url:${data.url}`;
     return `misc:${Math.random().toString(36).slice(2)}`; // fallback, should rarely happen
+}
+
+// Track tags that already completed to avoid stale UI updates
+let completedTags = new Set();
+let activityHistory = JSON.parse(sessionStorage.getItem('activityHistory') || '[]');
+
+// ----- Phase 4: History & Audio Helper Functions -----
+function addToHistory(message, type = 'info') {
+    const event = {
+        id: Date.now(),
+        time: new Date().toLocaleTimeString(),
+        message,
+        type // 'success', 'error', 'info'
+    };
+    activityHistory.unshift(event);
+    if (activityHistory.length > 50) activityHistory.pop();
+    sessionStorage.setItem('activityHistory', JSON.stringify(activityHistory));
+    renderHistory();
+}
+
+function renderHistory() {
+    const list = document.getElementById('historyList');
+    if (!list) return;
+
+    if (activityHistory.length === 0) {
+        list.innerHTML = '<div class="text-muted text-center py-4"><i class="bi bi-info-circle fs-2 d-block mb-2"></i>Sin actividad reciente</div>';
+        return;
+    }
+
+    list.innerHTML = activityHistory.map(item => `
+        <div class="history-item ${item.type}">
+            <div class="d-flex justify-content-between small opacity-75">
+                <span>${item.time}</span>
+            </div>
+            <div class="mt-1">${item.message}</div>
+        </div>
+    `).join('');
+}
+
+
+// Global selection tracking
+function updateGlobalBatchBar() {
+    const bar = document.getElementById('batchActionBar');
+    const countEl = document.getElementById('globalSelectedCount');
+    let total = 0;
+    selectedClipsMap.forEach(set => total += set.size);
+
+    if (total > 0) {
+        bar.style.display = 'block';
+        countEl.textContent = total;
+        document.body.classList.add('batch-active');
+    } else {
+        bar.style.display = 'none';
+        document.body.classList.remove('batch-active');
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -317,6 +370,132 @@ document.addEventListener('DOMContentLoaded', () => {
         new bootstrap.Tooltip(shortcutTooltipEl);
     }
 
+    // Initialize all tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // ----- Configuration Presets -----
+    const presets = {
+        fast: { minDuration: 0.5, maxDuration: 2.5, threshold: 22, maxClips: 50, padding: 0.05 },
+        balanced: { minDuration: 1.2, maxDuration: 6, threshold: 28, maxClips: 30, padding: 0.1 },
+        precise: { minDuration: 2, maxDuration: 12, threshold: 42, maxClips: 20, padding: 0.2 },
+        long: { minDuration: 5, maxDuration: 60, threshold: 35, maxClips: 10, padding: 0.25 }
+    };
+
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const presetKey = btn.dataset.preset;
+            const config = presets[presetKey];
+            if (!config) return;
+
+            // Update inputs
+            document.getElementById('minDuration').value = config.minDuration;
+            document.getElementById('maxDuration').value = config.maxDuration;
+            document.getElementById('threshold').value = config.threshold;
+            if (document.getElementById('maxClipsPerVideo')) document.getElementById('maxClipsPerVideo').value = config.maxClips;
+            if (document.getElementById('scenePadding')) document.getElementById('scenePadding').value = config.padding;
+
+            // Visual update
+            document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            showToast(`Preset "${btn.textContent.trim()}" aplicado`, 'info');
+        });
+    });
+
+    // ----- Onboarding Tour -----
+    function initOnboardingTour() {
+        if (localStorage.getItem('onboardingCompleted')) return;
+
+        const tour = new Shepherd.Tour({
+            useModalOverlay: true,
+            defaultStepOptions: {
+                classes: 'shadow-md bg-purple-dark',
+                scrollTo: { behavior: 'smooth', block: 'center' }
+            }
+        });
+
+        tour.addStep({
+            id: 'welcome',
+            title: '¡Bienvenido a SakugaDown!',
+            text: 'Esta herramienta te permite descargar videos de Sakugabooru y generar clips automáticamente usando IA y detección de escenas.',
+            buttons: [
+                { text: 'Omitir', action: () => { localStorage.setItem('onboardingCompleted', 'true'); tour.complete(); }, classes: 'shepherd-button-secondary' },
+                { text: 'Siguiente', action: tour.next }
+            ]
+        });
+
+        tour.addStep({
+            id: 'download',
+            element: '#download',
+            title: 'Descarga de Videos',
+            text: 'Pega una URL de Sakugabooru o una lista de etiquetas para descargar videos masivamente.',
+            attachTo: { element: '#download', on: 'bottom' },
+            buttons: [
+                { text: 'Atrás', action: tour.back, classes: 'shepherd-button-secondary' },
+                { text: 'Siguiente', action: tour.next }
+            ]
+        });
+
+        tour.addStep({
+            id: 'generate',
+            element: '#generate',
+            title: 'Generación de Clips',
+            text: 'Configura los parámetros para detectar escenas. ¡Usa los <b>Presets</b> para ir más rápido!',
+            attachTo: { element: '#presetsSection', on: 'top' },
+            buttons: [
+                { text: 'Atrás', action: tour.back, classes: 'shepherd-button-secondary' },
+                { text: 'Siguiente', action: tour.next }
+            ]
+        });
+
+        tour.addStep({
+            id: 'browser',
+            element: '#browserTab',
+            title: 'Explorador de Videos',
+            text: 'Aquí aparecerán tus videos descargados y clips generados listos para previsualizar.',
+            attachTo: { element: '#browserTab', on: 'bottom' },
+            buttons: [
+                { text: 'Entendido', action: () => { localStorage.setItem('onboardingCompleted', 'true'); tour.complete(); } }
+            ]
+        });
+
+        setTimeout(() => tour.start(), 1000);
+    }
+
+    initOnboardingTour();
+
+    // ----- Real-time Validation -----
+    const booruUrlInput = document.getElementById('downloadUrl');
+    if (booruUrlInput) {
+        booruUrlInput.addEventListener('input', debounce(() => {
+            const val = booruUrlInput.value.trim();
+            if (!val) {
+                booruUrlInput.classList.remove('is-valid', 'is-invalid');
+                return;
+            }
+            const isSakuga = /sakugabooru\.com\/post\/show\/\d+/.test(val) || /sakugabooru\.com\/.*tags=/.test(val);
+            booruUrlInput.classList.toggle('is-valid', isSakuga);
+            booruUrlInput.classList.toggle('is-invalid', !isSakuga);
+        }, 500));
+    }
+
+    const booruTagsInput = document.getElementById('downloadTags');
+    if (booruTagsInput) {
+        booruTagsInput.addEventListener('input', debounce(() => {
+            const val = booruTagsInput.value.trim();
+            if (!val) {
+                booruTagsInput.classList.remove('is-valid', 'is-invalid');
+                return;
+            }
+            const isValid = val.split(';').some(t => t.trim().length > 1);
+            booruTagsInput.classList.toggle('is-valid', isValid);
+            booruTagsInput.classList.toggle('is-invalid', !isValid);
+        }, 500));
+    }
+
     // ----- Socket.IO Event Handlers -----
     socket.on('connect', () => {
         console.log('Conectado al servidor WebSocket');
@@ -359,7 +538,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 tag: data.tag,
                 status: data.status,
                 message: data.message,
-                progress: data.progress
+                progress: data.progress,
+                startTime: Date.now(),
+                lastUpdate: Date.now()
             });
         }
 
@@ -380,27 +561,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Actualizar información de la descarga
         const key = getDownloadKey(data);
-        if (currentDownloads.has(key)) {
-            const download = currentDownloads.get(key);
+        const download = currentDownloads.get(key);
+        if (download) {
             download.status = data.status;
             download.message = data.message;
             if (data.progress) {
                 download.progress = data.progress;
+                download.lastUpdate = Date.now();
             }
-            currentDownloads.set(key, download);
         } else {
             currentDownloads.set(key, {
                 url: data.url,
                 tag: data.tag,
                 status: data.status,
                 message: data.message,
-                progress: data.progress
+                progress: data.progress,
+                startTime: Date.now(),
+                lastUpdate: Date.now()
             });
         }
 
         showDownloadStatus(`${data.message}`);
-        if (data.progress) {
-            updateDownloadProgress(data.progress);
+        if (data && data.progress !== undefined) {
+            updateDownloadProgress(data.progress, key);
         }
 
         updateDownloadList();
@@ -409,6 +592,7 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('downloadComplete', (data) => {
         console.log('Descarga completada:', data);
         showToast(`Descarga completada: ${data.fileName || data.url}`, 'success');
+        addToHistory(`Descargado: ${data.fileName || data.url}`, 'success');
 
         // Remover de las descargas activas
         const key = getDownloadKey(data);
@@ -434,6 +618,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('Error de descarga:', data);
         showDownloadError(data.message);
         showToast(`Error: ${data.message}`, 'danger');
+        addToHistory(`Error: ${data.message}`, 'error');
 
         // Actualizar estado de la descarga
         const key = getDownloadKey(data);
@@ -532,37 +717,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderClipFolderList(foldersToShow) {
         if (!folderListContainer) return;
-        folderListContainer.innerHTML = ''; // Clear previous list
+        folderListContainer.innerHTML = '';
 
         if (!Array.isArray(foldersToShow) || foldersToShow.length === 0) {
-            folderListContainer.innerHTML = '<p class="text-muted">No se encontraron carpetas de clips.</p>';
+            folderListContainer.innerHTML = `
+                <div class="col-12 text-center py-5">
+                    <i class="bi bi-folder2-open display-1 text-muted opacity-25"></i>
+                    <p class="text-muted mt-3">No se encontraron carpetas de clips.</p>
+                </div>`;
             return;
         }
 
-        const fragment = document.createDocumentFragment();
-        const listGroup = document.createElement('div');
-        listGroup.className = 'list-group';
+        foldersToShow.forEach((folder, index) => {
+            const col = document.createElement('div');
+            col.className = 'col-md-4 col-lg-3 animate-fade-in';
+            col.style.animationDelay = `${index * 0.05}s`;
 
-        foldersToShow.forEach(folder => {
-            const label = document.createElement('label');
-            label.className = 'list-group-item d-flex align-items-center';
+            const card = document.createElement('div');
+            card.className = 'card folder-card-advanced shadow-sm';
 
-            const checkbox = document.createElement('input');
-            checkbox.className = 'form-check-input me-2';
-            checkbox.type = 'checkbox';
-            checkbox.value = folder;
-            checkbox.id = `folder-${folder.replace(/\s+/g, '-')}`;
+            const checkboxId = `folderCheckbox-${folder.replace(/[^a-zA-Z0-9]/g, '-')}`;
 
-            const text = document.createElement('span');
-            text.textContent = folder;
+            card.innerHTML = `
+                <div class="card-body position-relative">
+                    <input class="form-check-input folder-checkbox" type="checkbox" value="${folder}" id="${checkboxId}">
+                    <div class="folder-icon-box">
+                        <i class="bi bi-folder-fill"></i>
+                    </div>
+                    <div class="folder-info">
+                        <h6 class="card-title mb-1 text-truncate" title="${folder}">${folder}</h6>
+                        <span class="badge bg-light text-dark border fw-normal">Clips MP4</span>
+                    </div>
+                </div>
+            `;
 
-            label.appendChild(checkbox);
-            label.appendChild(text);
-            listGroup.appendChild(label);
+            // Hacer que toda la tarjeta sea clickable (toggle del checkbox)
+            card.addEventListener('click', (e) => {
+                if (e.target.type === 'checkbox') return;
+                const cb = card.querySelector('input[type="checkbox"]');
+                cb.checked = !cb.checked;
+                card.classList.toggle('selected', cb.checked);
+            });
+
+            const cb = card.querySelector('input[type="checkbox"]');
+            cb.addEventListener('change', () => {
+                card.classList.toggle('selected', cb.checked);
+            });
+
+            col.appendChild(card);
+            folderListContainer.appendChild(col);
         });
-
-        fragment.appendChild(listGroup);
-        folderListContainer.appendChild(fragment);
     }
 
     async function fetchAndDisplayClipFolders() {
@@ -603,17 +807,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (selectAllFoldersBtn) {
                 selectAllFoldersBtn.addEventListener('click', () => {
-                    if (folderListContainer) {
-                        folderListContainer.querySelectorAll('input[type="checkbox"]').forEach(checkbox => checkbox.checked = true);
-                    }
+                    folderListContainer.querySelectorAll('.folder-card-advanced').forEach(card => {
+                        const cb = card.querySelector('input[type="checkbox"]');
+                        cb.checked = true;
+                        card.classList.add('selected');
+                    });
                 });
             }
 
             if (deselectAllFoldersBtn) {
                 deselectAllFoldersBtn.addEventListener('click', () => {
-                    if (folderListContainer) {
-                        folderListContainer.querySelectorAll('input[type="checkbox"]').forEach(checkbox => checkbox.checked = false);
-                    }
+                    folderListContainer.querySelectorAll('.folder-card-advanced').forEach(card => {
+                        const cb = card.querySelector('input[type="checkbox"]');
+                        cb.checked = false;
+                        card.classList.remove('selected');
+                    });
                 });
             }
 
@@ -673,13 +881,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 renameFeedback.textContent = `${result.message} Details: ${result.details || 'N/A'}`;
                 renameFeedback.classList.remove('alert-info', 'alert-danger');
                 renameFeedback.classList.add('alert', 'alert-success');
-                // Optionally, refresh folder list or clear selection
-                // fetchAndDisplayClipFolders(); // Re-fetch to clear selection, or manually clear:
-                selectedCheckboxes.forEach(cb => cb.checked = false);
+                addToHistory(`Renombrados clips de ${selectedFolders.length} carpetas`, 'success');
+                selectedCheckboxes.forEach(cb => {
+                    cb.checked = false;
+                    cb.closest('.folder-card-advanced').classList.remove('selected');
+                });
             } else {
                 renameFeedback.textContent = `Error: ${result.message || 'Unknown error'} Details: ${result.details || 'N/A'}`;
                 renameFeedback.classList.remove('alert-info', 'alert-success');
                 renameFeedback.classList.add('alert', 'alert-danger');
+                addToHistory(`Error al renombrar: ${result.message}`, 'error');
             }
         } catch (error) {
             console.error('Error renaming clips:', error);
@@ -702,45 +913,60 @@ document.addEventListener('DOMContentLoaded', () => {
     // }
     // Similarly for beat-sync, if it can be default active
     if (document.querySelector('.navbar-nav .nav-link[data-section="beat-sync"].active')) {
-       fetchAndDisplayBeatSyncClipFolders();
+        fetchAndDisplayBeatSyncClipFolders();
     }
 
     // --- Beat Sync Tab Functionality ---
 
     function renderBeatSyncClipFolderList(foldersToShow) {
         if (!beatSyncFolderListContainer) return;
-        beatSyncFolderListContainer.innerHTML = ''; // Clear previous list
+        beatSyncFolderListContainer.innerHTML = '';
 
         if (!Array.isArray(foldersToShow) || foldersToShow.length === 0) {
-            beatSyncFolderListContainer.innerHTML = '<p class="text-muted">No folders match your filter or no clip folders found.</p>';
+            beatSyncFolderListContainer.innerHTML = `
+                <div class="col-12 text-center py-4">
+                    <p class="text-muted small">No se encontraron carpetas.</p>
+                </div>`;
             return;
         }
 
-        const fragment = document.createDocumentFragment();
-        const listGroup = document.createElement('div');
-        listGroup.className = 'list-group';
+        foldersToShow.forEach((folder, index) => {
+            const col = document.createElement('div');
+            col.className = 'col-md-6 animate-fade-in';
+            col.style.animationDelay = `${index * 0.03}s`;
 
-        foldersToShow.forEach(folder => {
-            const label = document.createElement('label');
-            label.className = 'list-group-item d-flex align-items-center';
+            const card = document.createElement('div');
+            card.className = 'card folder-card-advanced shadow-sm py-2 px-3 h-100';
 
-            const checkboxId = `beatSyncFolderCheckbox-${folder.replace(/\s+/g, '-')}`;
-            const checkbox = document.createElement('input');
-            checkbox.className = 'form-check-input me-2';
-            checkbox.type = 'checkbox';
-            checkbox.value = folder;
-            checkbox.id = checkboxId;
+            const checkboxId = `beatSyncFolderCheckbox-${folder.replace(/[^a-zA-Z0-9]/g, '-')}`;
 
-            const text = document.createElement('span');
-            text.textContent = folder;
+            card.innerHTML = `
+                <div class="d-flex align-items-center gap-3">
+                    <input class="form-check-input m-0" type="checkbox" value="${folder}" id="${checkboxId}">
+                    <div class="folder-icon-box mb-0" style="width: 32px; height: 32px; font-size: 1rem; border-radius: 8px;">
+                        <i class="bi bi-folder-fill"></i>
+                    </div>
+                    <div class="text-truncate flex-grow-1">
+                        <small class="fw-bold d-block text-truncate" title="${folder}">${folder}</small>
+                    </div>
+                </div>
+            `;
 
-            label.appendChild(checkbox);
-            label.appendChild(text);
-            listGroup.appendChild(label);
+            card.addEventListener('click', (e) => {
+                if (e.target.type === 'checkbox') return;
+                const cb = card.querySelector('input[type="checkbox"]');
+                cb.checked = !cb.checked;
+                card.classList.toggle('selected', cb.checked);
+            });
+
+            const cb = card.querySelector('input[type="checkbox"]');
+            cb.addEventListener('change', () => {
+                card.classList.toggle('selected', cb.checked);
+            });
+
+            col.appendChild(card);
+            beatSyncFolderListContainer.appendChild(col);
         });
-
-        fragment.appendChild(listGroup);
-        beatSyncFolderListContainer.appendChild(fragment);
     }
 
     async function fetchAndDisplayBeatSyncClipFolders() {
@@ -778,23 +1004,82 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (beatSyncSelectAllFoldersBtn) {
         beatSyncSelectAllFoldersBtn.addEventListener('click', () => {
-            if (beatSyncFolderListContainer) {
-                beatSyncFolderListContainer.querySelectorAll('input[type="checkbox"]').forEach(checkbox => checkbox.checked = true);
-            }
+            beatSyncFolderListContainer.querySelectorAll('.folder-card-advanced').forEach(card => {
+                const cb = card.querySelector('input[type="checkbox"]');
+                cb.checked = true;
+                card.classList.add('selected');
+            });
         });
     }
 
     if (beatSyncDeselectAllFoldersBtn) {
         beatSyncDeselectAllFoldersBtn.addEventListener('click', () => {
-            if (beatSyncFolderListContainer) {
-                beatSyncFolderListContainer.querySelectorAll('input[type="checkbox"]').forEach(checkbox => checkbox.checked = false);
+            beatSyncFolderListContainer.querySelectorAll('.folder-card-advanced').forEach(card => {
+                const cb = card.querySelector('input[type="checkbox"]');
+                cb.checked = false;
+                card.classList.remove('selected');
+            });
+        });
+    }
+
+    // --- Audio Drag & Drop Logic ---
+    const audioDropZone = document.getElementById('audioDropZone');
+    const audioFileNameDisplay = document.getElementById('audioFileNameDisplay');
+
+    if (audioDropZone && audioFileUploadInput) {
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            audioDropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            audioDropZone.addEventListener(eventName, () => {
+                audioDropZone.classList.add('drag-over');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            audioDropZone.addEventListener(eventName, () => {
+                audioDropZone.classList.remove('drag-over');
+            });
+        });
+
+        audioDropZone.addEventListener('drop', (e) => {
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const file = files[0];
+                if (file.type.match('audio.*')) {
+                    audioFileUploadInput.files = files;
+                    // Trigger change event manually
+                    const event = new Event('change', { bubbles: true });
+                    audioFileUploadInput.dispatchEvent(event);
+                } else {
+                    showToast('Por favor, arrastra solo archivos MP3 o WAV.', 'warning');
+                }
             }
+        });
+
+        audioDropZone.addEventListener('click', () => {
+            audioFileUploadInput.click();
         });
     }
 
     if (audioFileUploadInput) {
         audioFileUploadInput.addEventListener('change', (event) => {
             const audioFile = event.target.files[0];
+
+            if (audioFile) {
+                audioDropZone.classList.add('has-file');
+                audioFileNameDisplay.textContent = `🎵 ${audioFile.name}`;
+                audioFileNameDisplay.style.display = 'block';
+                audioDropZone.querySelector('.drop-zone-content').style.display = 'none';
+            } else {
+                audioDropZone.classList.remove('has-file');
+                audioFileNameDisplay.style.display = 'none';
+                audioDropZone.querySelector('.drop-zone-content').style.display = 'block';
+            }
             if (audioRangeSlider && audioRangeSlider.noUiSlider) {
                 audioRangeSlider.noUiSlider.destroy();
             }
@@ -949,6 +1234,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Beat Sync Error:', error);
                 updateBeatSyncStatus(`Error: ${error.message || 'An unknown error occurred.'}`, true);
                 beatSyncProgressContainer.style.display = 'none'; // Hide progress on error
+                addToHistory(`Error en Beat Sync: ${error.message}`, 'error');
             } finally {
                 setFormDisabled(false); // Re-enable form in case of error or completion
             }
@@ -961,8 +1247,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Could also disable other inputs like start/end times, folder selection, etc.
         const formElements = beatSyncForm.elements;
         for (let i = 0; i < formElements.length; i++) {
-            if(formElements[i].id !== 'generateBeatSyncVideoBtn' && formElements[i].id !== 'audioFileUpload') {
-                 // formElements[i].disabled = disabled; // Example to disable all
+            if (formElements[i].id !== 'generateBeatSyncVideoBtn' && formElements[i].id !== 'audioFileUpload') {
+                // formElements[i].disabled = disabled; // Example to disable all
             }
         }
     }
@@ -979,7 +1265,7 @@ document.addEventListener('DOMContentLoaded', () => {
             beatSyncProgressBar.textContent = `${progressPercent}%`;
             beatSyncProgressBar.setAttribute('aria-valuenow', progressPercent);
         } else if (isError && beatSyncProgressContainer) {
-             // Optionally hide progress bar on error or set to 100% with error color
+            // Optionally hide progress bar on error or set to 100% with error color
             beatSyncProgressContainer.style.display = 'none';
         }
     }
@@ -1013,15 +1299,80 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         updateBeatSyncStatus('Video generation complete!', false, 100);
+        addToHistory(`Video Beat-Synced creado: ${outputVideoName}`, 'success');
+
         beatSyncResult.innerHTML = `
-            <p class="mt-3">Video generated successfully:</p>
-            <video src="/${resultData.videoPath}" controls class="img-fluid"></video>
-            <p class="mt-2"><a href="/${resultData.videoPath}" download="${outputVideoName}" class="btn btn-success">
-                <i class="bi bi-download"></i> Download Video
+            <div class="alert alert-success d-flex align-items-center gap-2 mb-3">
+                <i class="bi bi-check-circle-fill"></i>
+                <span>¡Video generado con éxito!</span>
+            </div>
+            <video src="/${resultData.videoPath}" controls class="img-fluid rounded shadow mb-3"></video>
+            <p><a href="/${resultData.videoPath}" download="${outputVideoName}" class="btn btn-success d-inline-flex align-items-center gap-2">
+                <i class="bi bi-download"></i> Descargar video final
             </a></p>
         `;
     }
 
+    // ----- History & Global UI Handlers -----
+    const historyToggle = document.getElementById('historyToggle');
+    const closeHistory = document.getElementById('closeHistoryPanel');
+    const sidePanel = document.getElementById('activityHistorySidePanel');
+
+    if (historyToggle) {
+        historyToggle.addEventListener('click', () => {
+            sidePanel.classList.toggle('active');
+            renderHistory();
+        });
+    }
+
+    if (closeHistory) {
+        closeHistory.addEventListener('click', () => {
+            sidePanel.classList.remove('active');
+        });
+    }
+
+    // Global Batch Actions
+    const deselectBtn = document.getElementById('deselectAllGlobal');
+    const deleteBatchBtn = document.getElementById('deleteSelectedGlobal');
+
+    if (deselectBtn) {
+        deselectBtn.addEventListener('click', () => {
+            selectedClipsMap.clear();
+            document.querySelectorAll('.clip-select-checkbox').forEach(cb => cb.checked = false);
+            document.querySelectorAll('.clip-selected').forEach(el => el.classList.remove('clip-selected'));
+            updateGlobalBatchBar();
+        });
+    }
+
+    if (deleteBatchBtn) {
+        deleteBatchBtn.addEventListener('click', async () => {
+            const total = Array.from(selectedClipsMap.values()).reduce((acc, set) => acc + set.size, 0);
+            if (!confirm(`¿Eliminar ${total} clips seleccionados?`)) return;
+
+            const videos = Array.from(selectedClipsMap.keys());
+            for (const video of videos) {
+                await deleteSelectedClips(video);
+            }
+            updateGlobalBatchBar();
+            addToHistory(`Eliminados ${total} clips en lote`, 'warning');
+        });
+    }
+
+    // ----- Back to Top Button -----
+    const backToTopBtn = document.getElementById('backToTop');
+    if (backToTopBtn) {
+        window.addEventListener('scroll', () => {
+            if (window.scrollY > 500) {
+                backToTopBtn.style.display = 'block';
+            } else {
+                backToTopBtn.style.display = 'none';
+            }
+        });
+
+        backToTopBtn.addEventListener('click', () => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+    }
 });
 
 // Actualizar la caché de videos
@@ -1066,6 +1417,13 @@ async function loadFoldersList() {
 async function loadVideoLists() {
     try {
         selectedClipsMap.clear();
+        updateGlobalBatchBar();
+        renderHistory();
+
+        // Mostrar skeletons mientras carga
+        document.getElementById('downloadedVideos').innerHTML = Array(4).fill('<div class="col-md-3 mb-4"><div class="card video-card skeleton" style="height: 300px"></div></div>').join('');
+        document.getElementById('generatedClips').innerHTML = Array(4).fill('<div class="col-md-3 mb-4"><div class="card video-card skeleton" style="height: 250px"></div></div>').join('');
+
         // Load downloaded videos
         const downloadRes = await fetch('/api/downloads');
         const downloads = await downloadRes.json();
@@ -1081,20 +1439,55 @@ async function loadVideoLists() {
     }
 }
 
-// Mostrar toast de estado
+// Map technical errors to user-friendly messages
+const ERROR_MESSAGES = {
+    'Invalid URL': 'La URL proporcionada no es válida. Asegúrate de que sea un enlace de Sakugabooru.',
+    'No posts found': 'No se encontraron publicaciones con las etiquetas especificadas.',
+    'FFmpeg process exited with code': 'Hubo un problema al procesar el video. Revisa la configuración de clips.',
+    'Failed to fetch': 'Error de conexión con el servidor. ¿Está encendido?',
+    'Timeout': 'La operación tardó demasiado. Prueba con un rango más pequeño.',
+    'ENOENT': 'No se pudo encontrar el archivo especificado.',
+    'EACCES': 'Permiso denegado al intentar acceder a los archivos.'
+};
+
+function getFriendlyErrorMessage(error) {
+    const message = typeof error === 'string' ? error : (error.message || 'Error desconocido');
+    for (const [key, friendly] of Object.entries(ERROR_MESSAGES)) {
+        if (message.includes(key)) return friendly;
+    }
+    return message;
+}
+
+// Mostrar toast de estado mejorado
 function showToast(message, type = 'info') {
     const container = document.getElementById('toastContainer');
     if (!container) return;
+
+    const icons = {
+        'success': 'bi-check-circle-fill',
+        'danger': 'bi-exclamation-octagon-fill',
+        'warning': 'bi-exclamation-triangle-fill',
+        'info': 'bi-info-circle-fill'
+    };
+
+    const icon = icons[type] || icons.info;
+    const friendlyMessage = type === 'danger' ? getFriendlyErrorMessage(message) : message;
+
     const toastEl = document.createElement('div');
-    toastEl.className = `toast align-items-center text-bg-${type} border-0`;
+    toastEl.className = `toast align-items-center text-bg-${type} border-0 shadow-lg`;
     toastEl.setAttribute('role', 'alert');
     toastEl.setAttribute('aria-live', 'assertive');
     toastEl.setAttribute('aria-atomic', 'true');
+
     toastEl.innerHTML = `
-        <div class="d-flex">
-            <div class="toast-body">${message}</div>
+        <div class="d-flex p-2">
+            <div class="toast-body d-flex align-items-center">
+                <i class="bi ${icon} me-2 fs-5"></i>
+                <div>${friendlyMessage}</div>
+            </div>
             <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
         </div>`;
+
     container.appendChild(toastEl);
     const toast = new bootstrap.Toast(toastEl, { delay: 5000 });
     toast.show();
@@ -1135,11 +1528,47 @@ function showDownloadError(message) {
     setTimeout(() => errorDiv.remove(), 10000);
 }
 
-// Actualizar la barra de progreso
-function updateDownloadProgress(percent) {
+// Actualizar la barra de progreso con métricas extendidas
+function updateDownloadProgress(percent, key) {
     const progressBar = document.getElementById('downloadProgress');
+    if (!progressBar) return;
+
     progressBar.style.width = `${percent}%`;
     progressBar.setAttribute('aria-valuenow', percent);
+
+    // Calculate metrics
+    const download = key ? currentDownloads.get(key) : Array.from(currentDownloads.values())[0];
+    const detailedEl = document.getElementById('detailedProgress');
+    const speedEl = document.getElementById('progressSpeed');
+    const etaEl = document.getElementById('progressEta');
+
+    if (download && download.startTime && percent > 0 && detailedEl) {
+        detailedEl.style.display = 'flex';
+        detailedEl.style.setProperty('display', 'flex', 'important');
+
+        const elapsed = (Date.now() - download.startTime) / 1000; // seconds
+        if (elapsed > 2) {
+            const speedPercent = percent / elapsed; // % per second
+            const remainingPercent = 100 - percent;
+            const etaTotalSeconds = remainingPercent / speedPercent;
+
+            // Format ETA
+            let etaText = 'Calculando...';
+            if (isFinite(etaTotalSeconds) && etaTotalSeconds >= 0) {
+                if (etaTotalSeconds < 60) {
+                    etaText = `${Math.round(etaTotalSeconds)}s restantes`;
+                } else {
+                    const mins = Math.floor(etaTotalSeconds / 60);
+                    const secs = Math.round(etaTotalSeconds % 60);
+                    etaText = `${mins}m ${secs}s restantes`;
+                }
+            }
+            if (etaEl) etaEl.innerHTML = `<i class="bi bi-clock-history"></i> ${etaText}`;
+
+            // Show artificial speed (since we dont have bytes, we show "percent speed" or just hide speed)
+            if (speedEl) speedEl.innerHTML = `<i class="bi bi-speedometer2"></i> ${speedPercent.toFixed(1)}%/s`;
+        }
+    }
 }
 
 // Añadir un resultado de descarga
@@ -1318,8 +1747,11 @@ function displayDownloadedVideos(videos) {
 
                 // Video preview (thumbnail)
                 const videoPreview = document.createElement('div');
-                videoPreview.className = 'video-thumbnail d-flex justify-content-center align-items-center bg-dark text-white';
+                videoPreview.className = 'video-thumbnail skeleton d-flex justify-content-center align-items-center bg-dark text-white';
                 videoPreview.innerHTML = '<i class="bi bi-play-circle fs-1"></i>';
+
+                // Una vez cargado (simulado o si tuviera thumbnail real), quitamos skeleton
+                setTimeout(() => videoPreview.classList.remove('skeleton'), 1000);
 
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'delete-video-btn';
@@ -1412,6 +1844,7 @@ function handleClipSelectionChange(videoName, clipPath, isChecked, cardEl) {
     }
     syncClipSelectionUI(videoName);
     updateDeleteSelectedButton(videoName);
+    updateGlobalBatchBar();
 }
 
 function getClipElementsForVideo(videoName) {
@@ -1448,6 +1881,7 @@ function selectAllClipsForVideo(videoName, clipPaths = []) {
     selectedClipsMap.set(videoName, new Set(normalizedPaths));
     syncClipSelectionUI(videoName);
     updateDeleteSelectedButton(videoName);
+    updateGlobalBatchBar();
 }
 
 async function deleteSelectedClips(videoName) {
@@ -1636,13 +2070,14 @@ function createClipElement(clip, globalIndex) {
 
     // Video preview (thumbnail)
     const videoContainer = document.createElement('div');
-    videoContainer.className = 'video-container';
+    videoContainer.className = 'video-container skeleton'; // Start with skeleton
 
     // Create video element with lazy loading
     const videoElement = document.createElement('video');
     videoElement.className = 'w-100';
+    videoElement.style.opacity = '0'; // Hide until loaded
     videoElement.src = `/clips/${clip.path}`;
-    videoElement.preload = 'none'; // Changed to 'none' for better performance
+    videoElement.preload = 'none';
     videoElement.muted = true;
     videoElement.loop = true;    // Lazy loading: start loading and autoplay when video comes into view
     const observer = new IntersectionObserver((entries) => {
@@ -1651,6 +2086,8 @@ function createClipElement(clip, globalIndex) {
                 videoElement.preload = 'metadata';
                 // Autoplay when the video comes into view
                 videoElement.addEventListener('loadeddata', () => {
+                    videoElement.style.opacity = '1';
+                    videoContainer.classList.remove('skeleton'); // Remove skeleton on load
                     videoElement.play().catch(error => {
                         console.log('Autoplay prevented:', error);
                     });
@@ -1658,7 +2095,7 @@ function createClipElement(clip, globalIndex) {
                 observer.unobserve(videoElement);
             }
         });
-    });
+    }, { rootMargin: '200px' });
     observer.observe(videoElement);    // Event listener for video click to toggle play/pause
     videoElement.addEventListener('click', () => {
         const container = videoElement.closest('.video-container');
@@ -2151,6 +2588,7 @@ async function generateClips(videoPath, sceneOptions = {}) {
         // Show success status
         progressBar.style.width = '100%';
         statusEl.textContent = `Generación de clips completada: ${data.clipPaths.length} clips creados`;
+        addToHistory(`Generados ${data.clipPaths.length} clips de ${videoPath.split('/').pop()}`, 'success');
 
         // Display clip results
         if (data.clipPaths && data.clipPaths.length > 0) {
@@ -2362,22 +2800,22 @@ async function generateClipsFromFolder(folderPath, sceneOptions = {}) {
                     group.appendChild(clipsRow);
                     clipsRow.id = `clips-group-gen-${folderName.replace(/[^a-zA-Z0-9]/g, '-')}`;
 
-                        const infoMap = buildClipInfoMap(result.clipInfos);
+                    const infoMap = buildClipInfoMap(result.clipInfos);
 
-                        relativeClipPaths.forEach(clipRelPath => {
-                            const clipName = clipRelPath.split('/').pop();
-                            const clipInfo = infoMap.get(clipRelPath) || {};
-                            const clipObj = {
-                                path: clipRelPath,
-                                name: clipName,
-                                size: typeof clipInfo.size === 'number' ? clipInfo.size : 0,
-                                duration: typeof clipInfo.duration === 'number' ? clipInfo.duration : 0
-                            };
-                            const clipCol = createClipElement(clipObj, 0);
-                            clipCol.classList.remove('col-md-3');
-                            clipCol.classList.add('col-md-4');
-                            clipsRow.appendChild(clipCol);
-                        });
+                    relativeClipPaths.forEach(clipRelPath => {
+                        const clipName = clipRelPath.split('/').pop();
+                        const clipInfo = infoMap.get(clipRelPath) || {};
+                        const clipObj = {
+                            path: clipRelPath,
+                            name: clipName,
+                            size: typeof clipInfo.size === 'number' ? clipInfo.size : 0,
+                            duration: typeof clipInfo.duration === 'number' ? clipInfo.duration : 0
+                        };
+                        const clipCol = createClipElement(clipObj, 0);
+                        clipCol.classList.remove('col-md-3');
+                        clipCol.classList.add('col-md-4');
+                        clipsRow.appendChild(clipCol);
+                    });
 
                     resultsContainer.appendChild(group);
                 }

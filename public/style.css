@@ -1,9 +1,35 @@
+:root {
+    --primary-bg: #f8fafc;
+    --card-bg: #ffffff;
+    --text-main: #1e293b;
+    --text-muted: #64748b;
+    --accent-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+    --accent-glow: rgba(99, 102, 241, 0.4);
+    --border-color: #e2e8f0;
+    --radius-lg: 12px;
+    --radius-md: 8px;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+[data-bs-theme="dark"] {
+    --primary-bg: #0f172a;
+    --card-bg: #1e293b;
+    --text-main: #f1f5f9;
+    --text-muted: #94a3b8;
+    --border-color: #334155;
+}
+
 /* General styles */
 body {
-    background-color: #f5f5f5;
+    background-color: var(--primary-bg);
+    color: var(--text-main);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
+    line-height: 1.5;
 }
 
 .container.main-content {
@@ -12,11 +38,12 @@ body {
 }
 
 footer {
-    background-color: #343a40;
-    color: #fff;
-    padding: 1.5rem 0;
+    background-color: #0f172a;
+    color: #94a3b8;
+    padding: 2rem 0;
     margin-top: auto;
     width: 100%;
+    border-top: 1px solid var(--border-color);
 }
 
 /* Section transitions */
@@ -41,26 +68,28 @@ footer {
 
 /* Video cards */
 .video-card {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
     margin-bottom: 1.5rem;
-    /* Increased margin */
-    transition: all 0.3s ease;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     cursor: pointer;
     position: relative;
-    border: 1px solid #ddd;
-    /* Subtle border */
-    border-radius: 0.25rem;
-    /* Optional: rounded corners */
 }
 
 .video-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.06);
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+    border-color: #6366f1;
 }
 
 .video-thumbnail {
-    height: 160px;
+    height: 180px;
     object-fit: cover;
-    background-color: #343a40;
+    background-color: #0f172a;
+    border-bottom: 1px solid var(--border-color);
 }
 
 /* Video browser */
@@ -157,20 +186,65 @@ footer {
 
 .video-card:hover .delete-clip-btn,
 .video-card:hover .delete-video-btn {
-    /* Show button on card hover */
     opacity: 1;
+    transform: scale(1.1);
 }
 
-/* Styles for Rename Clips Tab */
-#rename-clips .card-body {
-    /* Bootstrap's card-body padding is usually good. Add specific overrides if necessary. */
+.btn-primary {
+    background: var(--accent-gradient);
+    border: none;
+    font-weight: 500;
+    padding: 0.5rem 1.25rem;
+    border-radius: var(--radius-md);
+    transition: all 0.2s;
 }
+
+.btn-primary:hover {
+    box-shadow: 0 0 15px var(--accent-glow);
+    transform: translateY(-1px);
+    opacity: 0.95;
+}
+
+.card {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+}
+
+.card-header {
+    background-color: rgba(0, 0, 0, 0.02);
+    border-bottom: 1px solid var(--border-color);
+    padding: 1.25rem;
+}
+
+[data-bs-theme="dark"] .card-header {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.form-control,
+.form-select {
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    padding: 0.6rem 1rem;
+    background-color: var(--card-bg);
+    color: var(--text-main);
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
 
 #folder-list-container {
     /* Max height and scroll for long folder lists */
     max-height: 400px;
     overflow-y: auto;
-    border: 1px solid #dee2e6; /* Similar to Bootstrap's input border */
+    border: 1px solid #dee2e6;
+    /* Similar to Bootstrap's input border */
     padding: 0.5rem;
     border-radius: 0.25rem;
 }
@@ -183,7 +257,8 @@ footer {
 
 #folder-list-container .form-check-input {
     /* Ensure consistent spacing for the checkbox */
-    margin-top: 0; /* Align with text if default is off */
+    margin-top: 0;
+    /* Align with text if default is off */
     /* me-2 (0.5rem) is already applied in JS, adjust if more is needed */
 }
 
@@ -398,4 +473,411 @@ footer {
 
 .clip-selected {
     border: 3px solid #0d6efd;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    background: var(--card-bg);
+    border-radius: var(--radius-lg);
+    border: 2px dashed var(--border-color);
+    margin: 2rem 0;
+}
+
+.empty-state i {
+    font-size: 4rem;
+    background: var(--accent-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 1.5rem;
+    display: block;
+}
+
+.empty-state h3 {
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    margin-bottom: 1.5rem;
+    max-width: 400px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* Presets Styles */
+.preset-btn {
+    border-radius: 20px;
+    padding: 0.4rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s;
+    border-color: var(--border-color);
+    color: var(--text-muted);
+}
+
+.preset-btn:hover {
+    background-color: var(--primary-bg);
+    border-color: #6366f1;
+    color: #6366f1;
+}
+
+.preset-btn.active {
+    background: var(--accent-gradient) !important;
+    border: none !important;
+    color: white !important;
+    box-shadow: 0 4px 10px var(--accent-glow);
+}
+
+/* Shepherd.js Premium Theme Overrides */
+.shepherd-element {
+    background: var(--card-bg) !important;
+    color: var(--text-main) !important;
+    border-radius: var(--radius-lg) !important;
+    border: 1px solid var(--border-color) !important;
+    box-shadow: var(--shadow-lg) !important;
+    max-width: 400px !important;
+}
+
+.shepherd-header {
+    background: rgba(0, 0, 0, 0.03) !important;
+    padding: 1rem 1.5rem !important;
+}
+
+[data-bs-theme="dark"] .shepherd-header {
+    background: rgba(255, 255, 255, 0.03) !important;
+}
+
+.shepherd-text {
+    padding: 1.5rem !important;
+    line-height: 1.6 !important;
+}
+
+.shepherd-footer {
+    padding: 0 1.5rem 1.5rem !important;
+}
+
+.shepherd-button {
+    background: var(--accent-gradient) !important;
+    border-radius: var(--radius-md) !important;
+    font-weight: 600 !important;
+    padding: 0.5rem 1.25rem !important;
+    border: none !important;
+    color: white !important;
+}
+
+.shepherd-button.shepherd-button-secondary {
+    background: transparent !important;
+    color: var(--text-muted) !important;
+    border: 1px solid var(--border-color) !important;
+}
+
+.shepherd-title {
+    font-weight: 700 !important;
+    color: var(--text-main) !important;
+}
+
+.shepherd-arrow:before {
+    background: var(--card-bg) !important;
+    border: 1px solid var(--border-color) !important;
+}
+
+/* --- Micro-interactions & Animations --- */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.video-card,
+.card {
+    animation: fadeInUp 0.4s ease-out backwards;
+}
+
+/* Stagger animation for cards in lists */
+.list-group-item:nth-child(1) {
+    animation-delay: 0.05s;
+}
+
+.list-group-item:nth-child(2) {
+    animation-delay: 0.1s;
+}
+
+.list-group-item:nth-child(3) {
+    animation-delay: 0.15s;
+}
+
+.btn:active {
+    transform: scale(0.96);
+}
+
+/* Skeleton Screens */
+.skeleton {
+    background: linear-gradient(90deg, var(--border-color) 25%, var(--primary-bg) 50%, var(--border-color) 75%);
+    background-size: 200% 100%;
+    animation: skeleton-loading 1.5s infinite;
+    border-radius: var(--radius-md);
+}
+
+@keyframes skeleton-loading {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* --- Responsive Design (Mobile First) --- */
+@media (max-width: 768px) {
+    .container {
+        padding-left: 15px;
+        padding-right: 15px;
+    }
+
+    h1,
+    .h1 {
+        font-size: 1.75rem;
+    }
+
+    h2,
+    .h2 {
+        font-size: 1.5rem;
+    }
+
+    h3,
+    .h3 {
+        font-size: 1.25rem;
+    }
+
+    .navbar-brand {
+        font-size: 1.1rem;
+    }
+
+    .nav-link {
+        padding: 0.5rem 0.75rem !important;
+        font-size: 0.9rem;
+    }
+
+    .card-header {
+        padding: 1rem;
+    }
+
+    .video-thumbnail {
+        height: 150px;
+    }
+
+    /* Stack buttons on mobile if they are too long */
+    .d-flex.flex-wrap.gap-2 {
+        justify-content: center;
+    }
+
+    .preset-btn {
+        flex: 1 1 calc(50% - 10px);
+        text-align: center;
+    }
+
+    .shepherd-element {
+        width: 90vw !important;
+        max-width: none !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .preset-btn {
+        flex: 1 1 100%;
+    }
+
+    .btn-primary,
+    .btn-secondary {
+        width: 100%;
+        margin-bottom: 0.5rem;
+    }
+
+    .pagination-container {
+        flex-direction: column;
+        gap: 10px;
+    }
+}
+
+/* --- Phase 4: Premium Polish (History & Batch) --- */
+/* --- Phase 5: Advanced Tools UI --- */
+.folder-card-advanced {
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 2px solid transparent;
+    background: #fff;
+    overflow: hidden;
+}
+
+.folder-card-advanced:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+    border-color: rgba(var(--bs-primary-rgb), 0.2);
+}
+
+.folder-card-advanced .card-body {
+    padding: 1rem;
+}
+
+.folder-card-advanced .folder-icon-box {
+    width: 48px;
+    height: 48px;
+    background: rgba(var(--bs-primary-rgb), 0.1);
+    color: var(--bs-primary);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    margin-bottom: 0.75rem;
+    transition: transform 0.3s ease;
+}
+
+.folder-card-advanced:hover .folder-icon-box {
+    transform: scale(1.1) rotate(-5deg);
+}
+
+.folder-card-advanced.selected {
+    border-color: var(--bs-primary);
+    background-color: rgba(var(--bs-primary-rgb), 0.03);
+}
+
+.folder-card-advanced.selected .folder-icon-box {
+    background: var(--bs-primary);
+    color: white;
+}
+
+.folder-card-advanced input[type="checkbox"] {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 1.2rem;
+    height: 1.2rem;
+}
+
+/* Drop Zone Styles */
+.drop-zone {
+    border: 2px dashed #ced4da;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+}
+
+.drop-zone.drag-over {
+    border-color: var(--bs-primary);
+    background-color: rgba(var(--bs-primary-rgb), 0.05) !important;
+}
+
+.drop-zone.has-file {
+    border-style: solid;
+    border-color: var(--bs-success);
+    background-color: rgba(40, 167, 69, 0.05) !important;
+}
+
+/* Premium Scrollbar for folder containers */
+.scrollbar-premium::-webkit-scrollbar {
+    width: 6px;
+}
+
+.scrollbar-premium::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.scrollbar-premium::-webkit-scrollbar-thumb {
+    background: #ced4da;
+    border-radius: 10px;
+}
+
+.scrollbar-premium::-webkit-scrollbar-thumb:hover {
+    background: #adb5bd;
+}
+
+/* Animations */
+@keyframes fadeInSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in {
+    animation: fadeInSlideUp 0.4s ease-out forwards;
+}
+
+.history-panel {
+    position: fixed;
+    top: 0;
+    right: -350px;
+    width: 350px;
+    height: 100vh;
+    background: var(--card-bg);
+    z-index: 1050;
+    transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-left: 1px solid var(--border-color);
+    backdrop-filter: blur(10px);
+}
+
+.history-panel.active {
+    right: 0;
+}
+
+.history-item {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.85rem;
+    border-left: 3px solid transparent;
+    transition: background 0.2s;
+}
+
+.history-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.history-item.success {
+    border-left-color: #198754;
+}
+
+.history-item.error {
+    border-left-color: #dc3545;
+}
+
+.history-item.info {
+    border-left-color: #0dcaf0;
+}
+
+.batch-action-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    z-index: 1040;
+    background: rgba(15, 23, 42, 0.9) !important;
+    backdrop-filter: blur(15px);
+    border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+body.batch-active #backToTop {
+    bottom: 90px;
+}
+
+@media (max-width: 768px) {
+    .history-panel {
+        width: 100%;
+        right: -100%;
+    }
 }

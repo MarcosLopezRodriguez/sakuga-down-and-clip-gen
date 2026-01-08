@@ -5,6 +5,8 @@ import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import ClipGenerator, { SceneDetectionOptions } from './clipGenerator';
 import Downloader from './downloader';
+import { logger } from './utils';
+
 
 // Rutas principales
 const OUTPUT_DIR = path.join(process.cwd(), 'output');
@@ -40,10 +42,10 @@ export async function processVideosToPythonClips(
     try {
         // Usar la implementaciÃ³n que replica el comportamiento del script Python
         const generatedClips = await clipGenerator.processVideosLikePython(inputDir, options);
-        console.log(`Procesamiento completado. Se generaron ${generatedClips.length} clips.`);
+        logger.info(`Procesamiento completado. Se generaron ${generatedClips.length} clips.`);
         return generatedClips;
     } catch (error) {
-        console.error('Error durante el procesamiento:', error);
+        logger.error('Error durante el procesamiento:', error);
         throw error;
     }
 }
@@ -59,7 +61,7 @@ export async function processDownloadedVideos(
         throw new Error(`La categorÃ­a ${category} no existe en las descargas.`);
     }
 
-    console.log(`Procesando videos descargados en la categorÃ­a: ${category}`);
+    logger.info(`Procesando videos descargados en la categorÃ­a: ${category}`);
     return processVideosToPythonClips(categoryPath, options);
 }
 
@@ -98,7 +100,7 @@ yargs(hideBin(process.argv))
             );
             app.startServer();
         } catch (error) {
-            console.error('Error al iniciar el servidor web:', error);
+            logger.error('Error al iniciar el servidor web:', error);
             process.exit(1);
         }
     })
@@ -149,9 +151,9 @@ yargs(hideBin(process.argv))
                 }
             }
 
-            console.log('Descarga completada!');
+            logger.info('Descarga completada!');
         } catch (error) {
-            console.error('Error:', error);
+            logger.error('Error:', error);
             process.exit(1);
         }
     })
@@ -255,9 +257,10 @@ yargs(hideBin(process.argv))
                         sceneOptions
                     );
 
-                    console.log(`Se generaron ${clipPaths.length} clips del video.`);
+                    logger.info(`Se generaron ${clipPaths.length} clips del video.`);
                 } else if (stats.isDirectory()) {
                     console.log(`Procesando directorio: ${inputPath}`);
+                    logger.info(`Procesando directorio: ${inputPath}`);
                     const results = await app.processVideosDirectoryAndGenerateClips(inputPath, sceneOptions);
 
                     let totalClips = 0;
@@ -265,16 +268,16 @@ yargs(hideBin(process.argv))
                         totalClips += clips.length;
                     });
 
-                    console.log(`Se procesaron ${results.size} videos y se generaron ${totalClips} clips.`);
+                    logger.info(`Se procesaron ${results.size} videos y se generaron ${totalClips} clips.`);
                 }
             } else {
-                console.error(`Error: La ruta ${inputPath} no existe.`);
+                logger.error(`Error: La ruta ${inputPath} no existe.`);
                 process.exit(1);
             }
 
-            console.log('Proceso de generacion de clips completado!');
+            logger.info('Proceso de generacion de clips completado!');
         } catch (error) {
-            console.error('Error:', error);
+            logger.error('Error:', error);
             process.exit(1);
         }
     })
@@ -406,12 +409,12 @@ yargs(hideBin(process.argv))
                 totalClips += clips.length;
             });
 
-            console.log(`\nResumen del proceso:`);
-            console.log(`- Videos descargados: ${totalVideos}`);
-            console.log(`- Clips generados: ${totalClips}`);
-            console.log('Proceso completado!');
+            logger.info(`\nResumen del proceso:`);
+            logger.info(`- Videos descargados: ${totalVideos}`);
+            logger.info(`- Clips generados: ${totalClips}`);
+            logger.info('Proceso completado!');
         } catch (error) {
-            console.error('Error:', error);
+            logger.error('Error:', error);
             process.exit(1);
         }
     })
@@ -434,19 +437,19 @@ if (require.main === module) {
         const category = args[1];
 
         if (!category) {
-            console.error('Debe especificar una categorÃ­a para procesar');
+            logger.error('Debe especificar una categorÃ­a para procesar');
             process.exit(1);
         }
 
         processDownloadedVideos(category)
             .then(clips => {
-                console.log(`Proceso completado. Se generaron ${clips.length} clips.`);
+                logger.info(`Proceso completado. Se generaron ${clips.length} clips.`);
             })
             .catch(err => {
-                console.error('Error:', err);
+                logger.error('Error:', err);
                 process.exit(1);
             });
     } else {
-        console.log('Uso: node index.js process <categoria>');
+        logger.info('Uso: node index.js process <categoria>');
     }
 }

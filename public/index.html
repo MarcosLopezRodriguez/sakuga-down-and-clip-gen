@@ -3,8 +3,9 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#0d6efd">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <meta name="theme-color" content="#6366f1">
+    <meta name="description" content="Descargador de videos de Sakugabooru y generador de clips automático">
     <title>SakugaVideos - Downloader & Clip Generator</title>
     <!-- Bootstrap 5.3 for data-bs-theme support -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
@@ -16,6 +17,12 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.7.0/dist/nouislider.min.css"
         crossorigin="anonymous">
+    <!-- Google Fonts - Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Shepherd.js - Tour -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/shepherd.js@11.2.0/dist/css/shepherd.css" />
 
     <style>
         /* Respeta reduce motion: elimina animaciones/stripes en barras de progreso */
@@ -73,17 +80,21 @@
                         <a class="nav-link" href="#" data-section="beat-sync">Beat Sync</a>
                     </li>
                 </ul>
-                <div class="form-check form-switch text-light">
+                <div class="form-check form-switch text-light me-3">
                     <input class="form-check-input" type="checkbox" role="switch" id="themeToggle">
                     <label class="form-check-label" for="themeToggle">Modo oscuro</label>
                 </div>
+                <button class="btn btn-outline-light btn-sm" id="historyToggle" title="Historial de Actividad">
+                    <i class="bi bi-clock-history"></i>
+                </button>
             </div>
+        </div>
         </div>
     </nav>
 
     <main class="container main-content mt-4" role="main">
         <h1 class="visually-hidden">SakugaVideos - Downloader & Clip Generator</h1>
-        <!-- SecciÃ³n de descarga -->
+        <!-- Sección de descarga -->
         <section id="download" class="section-content active">
             <div class="card">
                 <div class="card-header">
@@ -106,8 +117,10 @@
                                     <input type="url" class="form-control" id="downloadUrl"
                                         aria-describedby="downloadUrlHelp"
                                         placeholder="https://www.sakugabooru.com/post?tags=one_piece" required>
-                                    <div id="downloadUrlHelp" class="form-text">Ingresa una URL de bÃºsqueda por
-                                        etiquetas o un post especÃ­fico</div>
+                                    <div id="downloadUrlHelp" class="form-text">Ingresa una URL de búsqueda por
+                                        etiquetas o un post específico</div>
+                                    <div class="invalid-feedback">Asegúrate de que sea una URL válida de Sakugabooru.
+                                    </div>
                                 </div>
                                 <button type="submit" class="btn btn-primary">
                                     <i class="bi bi-cloud-download"></i> Descargar
@@ -123,6 +136,7 @@
                                         placeholder="one_piece;dragon_ball;mob_psycho_100" required></textarea>
                                     <div id="downloadTagsHelp" class="form-text">Ingresa etiquetas separadas por punto y
                                         coma (;)</div>
+                                    <div class="invalid-feedback">Ingresa al menos una etiqueta.</div>
                                 </div>
                                 <button type="submit" class="btn btn-primary">
                                     <i class="bi bi-cloud-download"></i> Descargar
@@ -140,10 +154,15 @@
                 <div class="card-body">
                     <div id="downloadStatus" class="mb-3" role="status" aria-live="assertive">No hay descargas activas
                     </div>
-                    <div class="progress mb-3" style="display: none;">
+                    <div class="progress mb-2" style="display: none;">
                         <div id="downloadProgress" class="progress-bar progress-bar-striped progress-bar-animated"
                             role="progressbar" style="width: 0%" aria-valuemin="0" aria-valuemax="100"
                             aria-valuenow="0"></div>
+                    </div>
+                    <div id="detailedProgress" class="d-flex justify-content-between small text-muted mb-3"
+                        style="display: none;">
+                        <span id="progressSpeed"><i class="bi bi-speedometer2"></i> --- KB/s</span>
+                        <span id="progressEta"><i class="bi bi-clock-history"></i> Calculando...</span>
                     </div>
                     <div id="currentDownloadsList" class="list-group mb-3"></div>
                     <div id="downloadResults" class="list-group"></div>
@@ -151,7 +170,7 @@
             </div>
         </section>
 
-        <!-- SecciÃ³n para generar clips -->
+        <!-- Sección para generar clips -->
         <section id="generate" class="section-content">
             <div class="card">
                 <div class="card-header">
@@ -163,26 +182,69 @@
                             <label for="folderSelect" class="form-label">Selecciona carpeta:</label>
                             <select class="form-select" id="folderSelect" required aria-describedby="folderSelectHelp">
                                 <option value="" selected>Todos los videos</option>
-                                <!-- Las carpetas se cargarÃ¡n dinÃ¡micamente -->
+                                <!-- Las carpetas se cargarán dinámicamente -->
                             </select>
-                            <div id="folderSelectHelp" class="form-text">Se procesarÃ¡n todos los videos de la carpeta
+                            <div id="folderSelectHelp" class="form-text">Se procesarán todos los videos de la carpeta
                                 seleccionada</div>
                         </div>
+
+                        <!-- Presets Section -->
+                        <div class="row mb-4" id="presetsSection">
+                            <div class="col-12">
+                                <label
+                                    class="form-label d-block text-muted small text-uppercase fw-bold mb-2">Configuraciones
+                                    Rápidas (Presets)</label>
+                                <div class="d-flex flex-wrap gap-2">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm preset-btn"
+                                        data-preset="fast">
+                                        ⚡ Corte Rápido
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm preset-btn active"
+                                        data-preset="balanced">
+                                        ⚖️ Equilibrado
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm preset-btn"
+                                        data-preset="precise">
+                                        🎯 Alta Precisión
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm preset-btn"
+                                        data-preset="long">
+                                        🎬 Escenas Largas
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="row">
                             <div class="col-md-4 mb-3">
-                                <label for="minDuration" class="form-label">Duración mínima (segundos):</label>
+                                <label for="minDuration" class="form-label">
+                                    Duración mínima (segundos):
+                                    <i class="bi bi-info-circle text-primary" data-bs-toggle="tooltip"
+                                        data-bs-html="true"
+                                        title="Escenas más cortas que este valor serán ignoradas. <strong>Recomendado: 0.5 - 1.5s</strong>"></i>
+                                </label>
                                 <input type="number" class="form-control" id="minDuration" value="1" min="0.1"
                                     inputmode="decimal" pattern="^[0-9]+(\.[0-9]+)?$" step="0.1">
                                 <div class="form-text">Descarta escenas más cortas que este límite.</div>
                             </div>
                             <div class="col-md-4 mb-3">
-                                <label for="maxDuration" class="form-label">Duración máxima (segundos):</label>
+                                <label for="maxDuration" class="form-label">
+                                    Duración máxima (segundos):
+                                    <i class="bi bi-info-circle text-primary" data-bs-toggle="tooltip"
+                                        data-bs-html="true"
+                                        title="Escenas más largas que este valor se dividirán en clips más pequeños."></i>
+                                </label>
                                 <input type="number" class="form-control" id="maxDuration" value="3" min="0.5"
                                     inputmode="decimal" pattern="^[0-9]+(\.[0-9]+)?$" step="0.1">
                                 <div class="form-text">Divide escenas más largas en segmentos de este tamaño.</div>
                             </div>
                             <div class="col-md-4 mb-3">
-                                <label for="threshold" class="form-label">Sensibilidad (0-100):</label>
+                                <label for="threshold" class="form-label">
+                                    Sensibilidad (0-100):
+                                    <i class="bi bi-info-circle text-primary" data-bs-toggle="tooltip"
+                                        data-bs-html="true"
+                                        title="<strong>10-15:</strong> Detección estándar.<br><strong><10:</strong> Muy sensible (más clips).<br><strong>>20:</strong> Menos sensible."></i>
+                                </label>
                                 <input type="number" class="form-control" id="threshold" value="15" inputmode="numeric"
                                     pattern="^[0-9]+$" step="1">
                                 <div class="form-text">Valores más bajos detectan más cambios de escena.</div>
@@ -190,13 +252,21 @@
                         </div>
                         <div class="row">
                             <div class="col-md-4 mb-3">
-                                <label for="maxClipsPerVideo" class="form-label">Maximo de clips por video (opcional):</label>
-                                <input type="number" class="form-control" id="maxClipsPerVideo" min="1"
-                                    step="1" placeholder="Sin limite">
+                                <label for="maxClipsPerVideo" class="form-label">
+                                    Max clips por video:
+                                    <i class="bi bi-info-circle text-primary" data-bs-toggle="tooltip"
+                                        title="Limita la cantidad de clips generados para evitar saturación de archivos."></i>
+                                </label>
+                                <input type="number" class="form-control" id="maxClipsPerVideo" min="1" step="1"
+                                    placeholder="Sin limite">
                                 <div class="form-text">Deja vacio para permitir todos los clips detectados.</div>
                             </div>
                             <div class="col-md-4 mb-3">
-                                <label for="scenePadding" class="form-label">Margen extra (segundos):</label>
+                                <label for="scenePadding" class="form-label">
+                                    Margen extra (segundos):
+                                    <i class="bi bi-info-circle text-primary" data-bs-toggle="tooltip"
+                                        title="Añade un pequeño tiempo antes y después de cada escena para cortes más naturales."></i>
+                                </label>
                                 <input type="number" class="form-control" id="scenePadding" value="0" min="0"
                                     step="0.05">
                                 <div class="form-text">Añade segundos antes y después de cada clip para evitar cortes
@@ -211,9 +281,9 @@
                         </div>
                         <div class="row">
                             <div class="col-md-4 mb-3">
-                                <label for="detectionMethod" class="form-label">Metodo de deteccion:</label>
+                                <label for="detectionMethod" class="form-label">Método de detección:</label>
                                 <select class="form-select" id="detectionMethod">
-                                    <option value="auto" selected>Automatico (PySceneDetect con respaldo FFmpeg)
+                                    <option value="auto" selected>Automático (PySceneDetect con respaldo FFmpeg)
                                     </option>
                                     <option value="pyscenedetect">Solo PySceneDetect</option>
                                     <option value="ffmpeg">Solo FFmpeg</option>
@@ -249,7 +319,7 @@
             </div>
         </section>
 
-        <!-- SecciÃ³n de explorador -->
+        <!-- Sección de explorador -->
         <section id="browser" class="section-content">
             <div class="card">
                 <div class="card-header">
@@ -267,16 +337,21 @@
                     <div class="tab-content mt-3">
                         <div class="tab-pane fade show active" id="downloadsTab">
                             <div id="downloadedVideos" class="browser-content row"></div>
-                            <div id="noDownloadsMessage" class="text-center p-5">
-                                <i class="bi bi-inbox fs-1"></i>
-                                <p class="mt-3">No hay videos descargados</p>
+                            <div id="noDownloadsMessage" class="empty-state">
+                                <i class="bi bi-cloud-arrow-down"></i>
+                                <h3>No hay videos descargados</h3>
+                                <p>Comienza descargando contenido de Sakugabooru para verlo aquí.</p>
+                                <button class="btn btn-primary"
+                                    onclick="document.querySelector('[data-section=\'download\']').click()">
+                                    Ir a descargas
+                                </button>
                             </div>
                         </div>
                         <div class="tab-pane fade" id="clipsTab">
                             <!-- Pagination controls -->
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <div>
-                                    <small class="text-muted">Clips por pÃ¡gina:</small>
+                                    <small class="text-muted">Clips por página:</small>
                                     <select id="clipsPerPageSelect"
                                         class="form-select form-select-sm d-inline-block ms-2" style="width: auto;">
                                         <option value="8">8 clips</option>
@@ -286,8 +361,7 @@
                                         <option value="48">48 clips</option>
                                     </select>
                                     <small id="paginationShortcuts" class="text-muted ms-3" data-bs-toggle="tooltip"
-                                        data-bs-html="true"
-                                        title="Ctrl+â†: pÃ¡gina anterior&lt;br&gt;Ctrl+â†’: pÃ¡gina siguiente">
+                                        data-bs-html="true" title="Ctrl+←: página anterior<br>Ctrl+→: página siguiente">
                                         <i class="bi bi-info-circle"></i> Atajos de teclado
                                     </small>
                                 </div>
@@ -296,9 +370,14 @@
                                 </button>
                             </div>
                             <div id="generatedClips" class="browser-content row"></div>
-                            <div id="noClipsMessage" class="text-center p-5" style="display: none;">
-                                <i class="bi bi-film fs-1"></i>
-                                <p class="mt-3">No hay clips generados</p>
+                            <div id="noClipsMessage" class="empty-state" style="display: none;">
+                                <i class="bi bi-film"></i>
+                                <h3>No hay clips generados</h3>
+                                <p>Procesa tus videos descargados para extraer las mejores escenas.</p>
+                                <button class="btn btn-primary"
+                                    onclick="document.querySelector('[data-section=\'generate\']').click()">
+                                    Generar clips
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -306,7 +385,7 @@
             </div>
         </section>
 
-        <!-- SecciÃ³n para renombrar clips -->
+        <!-- Sección para renombrar clips -->
         <section id="rename-clips" class="section-content">
             <div class="card">
                 <div class="card-header">
@@ -316,42 +395,69 @@
                     <p class="card-text">
                         Selecciona las carpetas de clips que deseas procesar. Los videos MP4 dentro de estas carpetas (y
                         sus subcarpetas)
-                        serÃ¡n copiados a una nueva ubicaciÃ³n ('output/random_names') con nombres aleatorios de 20
-                        dÃ­gitos.
+                        serán copiados a una nueva ubicación ('output/random_names') con nombres aleatorios de 20
+                        dígitos.
                     </p>
-                    <input type="text" class="form-control mb-2" id="folderFilterInput"
-                        placeholder="Filtrar carpetas...">
-                    <div class="mb-3 btn-group btn-group-sm">
-                        <button type="button" class="btn btn-outline-secondary" id="selectAllFoldersBtn">Seleccionar
-                            Todo</button>
-                        <button type="button" class="btn btn-outline-secondary" id="deselectAllFoldersBtn">Desmarcar
-                            Todo</button>
-                    </div>
-                    <div id="folder-loading-indicator" class="alert alert-info" role="alert">
-                        <div class="spinner-border spinner-border-sm" role="status">
-                            <span class="visually-hidden">Loading...</span>
+                    <div class="row mb-4">
+                        <div class="col-md-8">
+                            <div class="input-group">
+                                <span class="input-group-text bg-transparent border-end-0">
+                                    <i class="bi bi-search text-muted"></i>
+                                </span>
+                                <input type="text" class="form-control border-start-0 ps-0" id="folderFilterInput"
+                                    placeholder="Filtrar carpetas por nombre...">
+                            </div>
                         </div>
-                        Cargando carpetas...
+                        <div class="col-md-4 d-flex justify-content-md-end mt-3 mt-md-0">
+                            <div class="btn-group shadow-sm">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="selectAllFoldersBtn">
+                                    <i class="bi bi-check-all"></i> Todo
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm"
+                                    id="deselectAllFoldersBtn">
+                                    <i class="bi bi-x"></i> Nada
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                    <div id="folder-list-container" class="mb-3">
-                        <!-- Las carpetas se cargarÃ¡n aquÃ­ -->
+
+                    <div id="folder-loading-indicator" class="text-center py-5" style="display: none;">
+                        <div class="spinner-grow text-primary" role="status">
+                            <span class="visually-hidden">Cargando...</span>
+                        </div>
+                        <p class="text-muted mt-2">Escaneando carpetas de clips...</p>
                     </div>
-                    <div class="mb-3">
-                        <label for="outputSubfolderName" class="form-label">Nombre de la carpeta de salida:</label>
-                        <input type="text" class="form-control" id="outputSubfolderName"
-                            placeholder="Ej: nuevosNombres">
-                        <div class="form-text">Este nombre se usarÃ¡ para crear una subcarpeta dentro de
-                            'output/random_names'. Se aÃ±adirÃ¡ automÃ¡ticamente el sufijo '_random'.</div>
+
+                    <div id="folder-list-container" class="row g-3 mb-4">
+                        <!-- Rediseñado como grid de tarjetas interactivas -->
                     </div>
-                    <button id="rename-button" class="btn btn-success">
-                        <i class="bi bi-pencil-square"></i> Renombrar Clips Seleccionados
+
+                    <div class="card bg-light border-0 mb-4 shadow-sm">
+                        <div class="card-body">
+                            <label for="outputSubfolderName" class="form-label fw-bold">Carpeta de destino</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-folder-plus"></i></span>
+                                <input type="text" class="form-control" id="outputSubfolderName"
+                                    placeholder="Ej: mis_favoritos">
+                                <span class="input-group-text text-muted">_random</span>
+                            </div>
+                            <div class="form-text mt-2">
+                                <i class="bi bi-info-circle"></i> Los clips se copiarán con nombres aleatorios para
+                                evitar duplicados en software de edición.
+                            </div>
+                        </div>
+                    </div>
+
+                    <button id="rename-button" class="btn btn-primary d-flex align-items-center gap-2 px-4 shadow">
+                        <i class="bi bi-pencil-square fs-5"></i>
+                        <span>Procesar y Renombrar</span>
                     </button>
-                    <div id="rename-feedback" class="mt-3"></div>
+                    <div id="rename-feedback" class="mt-4"></div>
                 </div>
             </div>
         </section>
 
-        <!-- SecciÃ³n para Beat Sync -->
+        <!-- Sección para Beat Sync -->
         <section id="beat-sync" class="section-content">
             <div class="card">
                 <div class="card-header">
@@ -360,13 +466,22 @@
                 <div class="card-body">
                     <form id="beatSyncForm">
                         <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="audioFileUpload" class="form-label">1. Sube tu archivo de audio (MP3,
-                                    WAV):</label>
-                                <input type="file" class="form-control" id="audioFileUpload" accept=".mp3,.wav">
+                            <div class="mb-4">
+                                <label class="form-label fw-bold">1. Archivo de Audio</label>
+                                <div id="audioDropZone"
+                                    class="drop-zone p-4 mb-2 text-center border-dashed rounded-3 bg-light transition-base">
+                                    <div class="drop-zone-content">
+                                        <i class="bi bi-cloud-upload display-4 text-primary"></i>
+                                        <h5 class="mt-3">Arrastra tu audio aquí</h5>
+                                        <p class="text-muted small">o haz clic para seleccionar (MP3 o WAV)</p>
+                                    </div>
+                                    <input type="file" class="d-none" id="audioFileUpload" accept=".mp3,.wav">
+                                    <div id="audioFileNameDisplay" class="mt-2 fw-bold text-success"
+                                        style="display:none;"></div>
+                                </div>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <div id="audioInfo" class="form-text mt-4">Sube un audio para ver su duraciÃ³n.</div>
+                                <div id="audioInfo" class="form-text mt-4">Sube un audio para ver su duración.</div>
                             </div>
                         </div>
                         <div class="row">
@@ -395,20 +510,32 @@
                             </div>
                         </div>
 
-                        <div class="mb-3">
-                            <p class="form-label">4. Selecciona carpetas de clips fuente:</p>
-                            <input type="text" class="form-control mb-2" id="beatSyncFolderFilterInput"
-                                placeholder="Filtrar carpetas de clips...">
-                            <div class="mb-2 btn-group btn-group-sm">
-                                <button type="button" class="btn btn-outline-secondary"
-                                    id="beatSyncSelectAllFoldersBtn">Seleccionar Todo</button>
-                                <button type="button" class="btn btn-outline-secondary"
-                                    id="beatSyncDeselectAllFoldersBtn">Desmarcar Todo</button>
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">4. Selección de Clips Fuente</label>
+                            <div class="row mb-3 align-items-center">
+                                <div class="col-md-7">
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text bg-transparent border-end-0">
+                                            <i class="bi bi-search text-muted"></i>
+                                        </span>
+                                        <input type="text" class="form-control border-start-0 ps-0 pe-2"
+                                            id="beatSyncFolderFilterInput" placeholder="Buscar clips...">
+                                    </div>
+                                </div>
+                                <div class="col-md-5 d-flex justify-content-md-end mt-2 mt-md-0">
+                                    <div class="btn-group btn-group-sm mb-0">
+                                        <button type="button" class="btn btn-outline-secondary"
+                                            id="beatSyncSelectAllFoldersBtn">Todo</button>
+                                        <button type="button" class="btn btn-outline-secondary"
+                                            id="beatSyncDeselectAllFoldersBtn">Nada</button>
+                                    </div>
+                                </div>
                             </div>
-                            <div id="beatSyncFolderListContainer" class="border p-2"
-                                style="max-height: 200px; overflow-y: auto;">
-                                <!-- Las carpetas de clips se cargarÃ¡n aquÃ­ -->
-                                <p class="text-muted">Cargando carpetas de clips...</p>
+                            <div id="beatSyncFolderListContainer"
+                                class="row g-2 mb-3 px-2 py-3 border rounded-3 bg-light scrollbar-premium"
+                                style="max-height: 250px; overflow-y: auto;">
+                                <!-- Grid de carpetas para Beat Sync -->
+                                <p class="text-muted text-center w-100 py-4">Selecciona un audio primero...</p>
                             </div>
                         </div>
 
@@ -427,7 +554,7 @@
             </div>
             <div class="card mt-4">
                 <div class="card-header">
-                    <h3>Proceso de GeneraciÃ³n Beat Sync</h3>
+                    <h3>Proceso de Generación Beat Sync</h3>
                 </div>
                 <div class="card-body">
                     <div id="beatSyncStatus" class="alert alert-info" role="alert" style="display: none;">
@@ -439,7 +566,7 @@
                             aria-valuemax="100">0%</div>
                     </div>
                     <div id="beatSyncResult" class="mt-3">
-                        <!-- El resultado del video se mostrarÃ¡ aquÃ­ -->
+                        <!-- El resultado del video se mostrará aquí -->
                     </div>
                 </div>
             </div>
@@ -476,6 +603,7 @@
         crossorigin="anonymous"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/wnumb@1.2.0/wNumb.min.js" crossorigin="anonymous"></script>
     <script defer src="https://cdn.socket.io/4.5.0/socket.io.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/shepherd.js@11.2.0/dist/js/shepherd.min.js"></script>
     <script defer src="app.js"></script>
     <script>
         // Toggle de tema claro/oscuro
@@ -486,7 +614,7 @@
                 try { localStorage.setItem('theme', theme); } catch (e) { }
                 if (checkbox) checkbox.checked = (theme === 'dark');
             };
-            // Inicializar checkbox segÃºn estado actual
+            // Inicializar checkbox según estado actual
             if (checkbox) {
                 const current = document.documentElement.getAttribute('data-bs-theme') || 'light';
                 checkbox.checked = (current === 'dark');
@@ -501,6 +629,49 @@
             } catch (e) { }
         })();
     </script>
+    <!-- Botón Volver Arriba -->
+    <button id="backToTop" class="btn btn-primary rounded-circle shadow-lg"
+        style="position: fixed; bottom: 20px; right: 20px; width: 50px; height: 50px; display: none; z-index: 1000;"
+        aria-label="Volver arriba">
+        <i class="bi bi-arrow-up"></i>
+    </button>
+    <!-- Panel de Historial Lateral -->
+    <div id="activityHistorySidePanel" class="history-panel shadow-lg">
+        <div class="p-3 border-bottom d-flex justify-content-between align-items-center bg-dark text-white">
+            <h5 class="mb-0 small fw-bold text-uppercase tracking-wider"><i
+                    class="bi bi-clock-history me-2"></i>Historial</h5>
+            <button type="button" class="btn-close btn-close-white" id="closeHistoryPanel"></button>
+        </div>
+        <div id="historyList" class="p-3 overflow-auto">
+            <div class="text-muted text-center py-4">
+                <i class="bi bi-info-circle fs-2 d-block mb-2"></i>
+                Sin actividad reciente
+            </div>
+        </div>
+    </div>
+
+    <!-- Barra de Acciones Batch Flotante -->
+    <div id="batchActionBar" class="batch-action-bar shadow-lg p-3 bg-dark text-white border-top"
+        style="display: none;">
+        <div class="container d-flex justify-content-between align-items-center">
+            <div>
+                <span class="badge bg-primary me-2 px-3 py-2 rounded-pill" id="globalSelectedCount">0</span>
+                <span class="small fw-medium">seleccionados</span>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-light btn-sm px-3 rounded-pill" id="deselectAllGlobal">
+                    <i class="bi bi-x-circle me-1"></i> Desmarcar
+                </button>
+                <button class="btn btn-warning btn-sm px-3 rounded-pill fw-bold" id="deleteSelectedGlobal">
+                    <i class="bi bi-trash me-1"></i> Eliminar
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+        crossorigin="anonymous"></script>
 </body>
 
 </html>

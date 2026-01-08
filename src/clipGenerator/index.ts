@@ -5,6 +5,8 @@ import { spawn } from 'child_process';
 import { execSync } from 'child_process';
 import ffprobe from 'ffprobe-static';
 import { ffprobeCache } from '../utils/ffprobeCache';
+import { logger } from '../utils';
+
 
 /**
  * Opciones para la detección de escenas
@@ -101,10 +103,10 @@ const ffmpegPath = findFFmpegPath();
 if (ffmpegPath) {
     FFMPEG_PATH = ffmpegPath;
     FFPROBE_PATH = process.env.FFPROBE_PATH || ffmpegPath.replace('ffmpeg.exe', 'ffprobe.exe');
-    console.log(`FFmpeg detectado en: ${FFMPEG_PATH}`);
-    console.log(`FFprobe detectado en: ${FFPROBE_PATH}`);
+    logger.info(`FFmpeg detectado en: ${FFMPEG_PATH}`);
+    logger.info(`FFprobe detectado en: ${FFPROBE_PATH}`);
 } else {
-    console.warn('No se pudo detectar FFmpeg automáticamente. Se intentará usar los comandos "ffmpeg" y "ffprobe" directamente.');
+    logger.warn('No se pudo detectar FFmpeg automáticamente. Se intentará usar los comandos "ffmpeg" y "ffprobe" directamente.');
     FFPROBE_PATH = process.env.FFPROBE_PATH || ffprobe.path;
 }
 
@@ -126,8 +128,8 @@ export class ClipGenerator {
         this.preferStreamCopy = this.computeStreamCopyPreference();
         this.clipConcurrencyLimit = this.computeInitialConcurrencyLimit();
 
-        console.log(`Usando FFmpeg en: ${this.ffmpegPath}`);
-        console.log(`Usando FFprobe en: ${this.ffprobePath}`);
+        logger.info(`Usando FFmpeg en: ${this.ffmpegPath}`);
+        logger.info(`Usando FFprobe en: ${this.ffprobePath}`);
 
         // Crear directorio de salida si no existe
         if (!fs.existsSync(outputDirectory)) {
@@ -266,28 +268,30 @@ export class ClipGenerator {
 
     private async executeClipCommand(args: string[], outputPath: string): Promise<string> {
         return new Promise((resolve, reject) => {
-            console.log(`Running ffmpeg command: ${this.ffmpegPath} ${args.join(' ')}`);
+            logger.debug(`Running ffmpeg command: ${this.ffmpegPath} ${args.join(' ')}`);
             const ffmpegProcess = spawn(this.ffmpegPath, args);
 
+            let stdoutData = '';
+            let stderrData = '';
+
             ffmpegProcess.stdout.on('data', (data) => {
-                console.log(`ffmpeg stdout: ${data}`);
+                stdoutData += data.toString();
             });
 
             ffmpegProcess.stderr.on('data', (data) => {
-                console.log(`ffmpeg stderr: ${data}`);
+                stderrData += data.toString();
             });
 
             ffmpegProcess.on('close', (code) => {
                 if (code === 0) {
                     if (fs.existsSync(outputPath)) {
-                        console.log(`Clip successfully generated at ${outputPath}`);
-                        console.log(`Output file verified at ${outputPath}`);
+                        logger.info(`Clip successfully generated at ${outputPath}`);
                         resolve(outputPath);
                     } else {
-                        reject(new Error(`Output file not found at ${outputPath}`));
+                        reject(new Error(`Output file not found at ${outputPath}. FFmpeg output: ${stderrData}`));
                     }
                 } else {
-                    reject(new Error(`ffmpeg process exited with code ${code}`));
+                    reject(new Error(`ffmpeg process exited with code ${code}. Error: ${stderrData}`));
                 }
             });
 
@@ -346,7 +350,7 @@ export class ClipGenerator {
 
                 return handler(segment, index)
                     .catch((error) => {
-                        console.error(`Failed to process segment ${segmentStart}-${segmentEnd}:`, error);
+                        logger.error(`Failed to process segment ${segmentStart}-${segmentEnd}:`, error);
                         return undefined;
                     })
                     .then((value) => ({ index, value }));
@@ -379,7 +383,7 @@ export class ClipGenerator {
         maybeOptions?: ClipCommandOptions
     ): Promise<string> {
         if (!fs.existsSync(videoPath)) {
-            console.error(`Error: Video file not found: ${videoPath}`);
+            logger.error(`Error: Video file not found: ${videoPath}`);
             throw new Error(`Video file not found: ${videoPath}`);
         }
 
@@ -400,17 +404,17 @@ export class ClipGenerator {
         const outputFileName = outputName || `${videoName}_clip_${startTime}_${endTime}.mp4`;
         const outputPath = path.join(this.outputDirectory, outputFileName);
 
-        console.log(`Generating clip from ${startTime}s to ${endTime}s from video ${videoPath}`);
-        console.log(`Output path: ${outputPath}`);
+        logger.info(`Generating clip from ${startTime}s to ${endTime}s from video ${videoPath}`);
+        logger.debug(`Output path: ${outputPath}`);
 
         // Asegurar que el directorio de salida existe
         if (!fs.existsSync(this.outputDirectory)) {
-            console.log(`Creating output directory: ${this.outputDirectory}`);
+            logger.info(`Creating output directory: ${this.outputDirectory}`);
             fs.mkdirSync(this.outputDirectory, { recursive: true });
         }
 
         if (!clipOptions.reencode) {
-            console.log(`Using stream copy clip extraction (fast seek: ${clipOptions.fastSeek})`);
+            logger.debug(`Using stream copy clip extraction (fast seek: ${clipOptions.fastSeek})`);
         }
 
         const args = this.buildClipCommandArgs(videoPath, startTime, endTime, outputPath, clipOptions);
@@ -566,8 +570,8 @@ export class ClipGenerator {
         const maxDuration = sanitizedOptions.maxDuration ?? Math.max(minDuration, 3.0);
         const threshold = sanitizedOptions.threshold ?? 15;
 
-        console.log(`Detecting scenes in ${videoPath}...`);
-        console.log(`Options: minDuration=${minDuration}, maxDuration=${maxDuration}, threshold=${threshold}, maxClips=${sanitizedOptions.maxClipsPerVideo ?? 'unlimited'}`);
+        logger.info(`Detecting scenes in ${videoPath}...`);
+        logger.debug(`Options: minDuration=${minDuration}, maxDuration=${maxDuration}, threshold=${threshold}, maxClips=${sanitizedOptions.maxClipsPerVideo ?? 'unlimited'}`);
 
         return new Promise((resolve, reject) => {
             const tempDir = path.join(this.outputDirectory, '../temp');
@@ -589,11 +593,11 @@ export class ClipGenerator {
                         try {
                             fs.rmSync(entryPath, { recursive: true, force: true });
                         } catch (innerErr) {
-                            console.warn(`No se pudo eliminar el temporal ${entryPath}: ${innerErr instanceof Error ? innerErr.message : innerErr}`);
+                            logger.warn(`No se pudo eliminar el temporal ${entryPath}: ${innerErr instanceof Error ? innerErr.message : innerErr}`);
                         }
                     }
                 } catch (cleanupErr) {
-                    console.warn(`No se pudo limpiar el directorio temporal ${tempDir}: ${cleanupErr instanceof Error ? cleanupErr.message : cleanupErr}`);
+                    logger.warn(`No se pudo limpiar el directorio temporal ${tempDir}: ${cleanupErr instanceof Error ? cleanupErr.message : cleanupErr}`);
                 }
             };
 
@@ -615,12 +619,12 @@ export class ClipGenerator {
             sceneDetectProcess.stdout.on('data', (data) => {
                 const output = data.toString();
                 stdoutData += output;
-                console.log('PySceneDetect stdout:', output);
+                logger.debug('PySceneDetect stdout:', output);
             });
 
             sceneDetectProcess.stderr.on('data', (data) => {
                 stderrData += data.toString();
-                console.error('PySceneDetect stderr:', data.toString());
+                logger.error('PySceneDetect stderr:', data.toString());
             });
 
             sceneDetectProcess.on('close', async (code) => {
@@ -666,7 +670,7 @@ export class ClipGenerator {
                                 }
                             }
                         } else {
-                            console.warn(`Scene CSV not found at ${csvFile}, PySceneDetect output:\n${stdoutData}`);
+                            logger.warn(`Scene CSV not found at ${csvFile}, PySceneDetect output:\n${stdoutData}`);
                         }
 
                         const videoDuration = await this.getVideoDuration(videoPath);
@@ -695,10 +699,10 @@ export class ClipGenerator {
 
                                 try {
                                     await this.generateClipWithoutAudio(videoPath, inicio, fin, outputPath);
-                                    console.log(`Generated clip ${index + 1}/${normalizedSegments.length}: ${outputFileName}`);
+                                    logger.info(`Generated clip ${index + 1}/${normalizedSegments.length}: ${outputFileName}`);
                                     return outputPath;
                                 } catch (error) {
-                                    console.error(`Error generando clip ${outputFileName}:`, error);
+                                    logger.error(`Error generando clip ${outputFileName}:`, error);
                                     throw error;
                                 }
                             }
@@ -706,14 +710,14 @@ export class ClipGenerator {
 
                         resolve(clipPaths);
                     } catch (error) {
-                        console.error('Error processing scenes:', error);
+                        logger.error('Error processing scenes:', error);
                         reject(error);
                     } finally {
                         cleanupTempDir();
                     }
                 } else {
-                    console.error(`PySceneDetect process exited with error code ${code}`);
-                    console.error(`stderr: ${stderrData}`);
+                    logger.error(`PySceneDetect process exited with error code ${code}`);
+                    logger.error(`stderr: ${stderrData}`);
 
                     if (sanitizedOptions.detectionMethod === 'pyscenedetect') {
                         cleanupTempDir();
@@ -725,7 +729,7 @@ export class ClipGenerator {
                         const clipPaths = await this.detectScenesWithFFmpegAndGenerateClips(videoPath, sanitizedOptions);
                         resolve(clipPaths);
                     } catch (ffmpegError) {
-                        console.error('Error processing FFmpeg fallback:', ffmpegError);
+                        logger.error('Error processing FFmpeg fallback:', ffmpegError);
                         reject(ffmpegError);
                     } finally {
                         cleanupTempDir();
@@ -783,7 +787,7 @@ export class ClipGenerator {
         const maxDuration = sanitizedOptions.maxDuration ?? Math.max(minDuration, 3.0);
         const threshold = this.getFfmpegSceneThreshold(sanitizedOptions);
 
-        console.log(`Detecting scenes with FFmpeg in ${videoPath} using threshold ${threshold}`);
+        logger.info(`Detecting scenes with FFmpeg in ${videoPath} using threshold ${threshold}`);
 
         return new Promise((resolve, reject) => {
             const args = [
@@ -803,7 +807,7 @@ export class ClipGenerator {
 
             ffmpegProcess.on('close', async (code) => {
                 if (code !== 0) {
-                    console.error('FFmpeg stderr:', stderrData);
+                    logger.error(`FFmpeg process exited with code ${code}. Stderr: ${stderrData}`);
                     reject(new Error(`FFmpeg process exited with code ${code}`));
                     return;
                 }
@@ -854,7 +858,7 @@ export class ClipGenerator {
 
                     const normalizedSegments = await this.prepareSegments(videoPath, timeSegments, sanitizedOptions, videoDuration);
 
-                    console.log(`FFmpeg produced ${normalizedSegments.length} normalized segments`);
+                    logger.info(`FFmpeg produced ${normalizedSegments.length} normalized segments`);
 
                     if (!normalizedSegments.length) {
                         resolve([]);
@@ -876,10 +880,10 @@ export class ClipGenerator {
 
                             try {
                                 await this.generateClipWithoutAudio(videoPath, inicio, fin, outputPath);
-                                console.log(`Generated clip ${index + 1}/${normalizedSegments.length}: ${outputFileName}`);
+                                logger.info(`Generated clip ${index + 1}/${normalizedSegments.length}: ${outputFileName}`);
                                 return outputPath;
                             } catch (error) {
-                                console.error(`Error generando clip ${outputFileName}:`, error);
+                                logger.error(`Error generando clip ${outputFileName}:`, error);
                                 throw error;
                             }
                         }
@@ -887,7 +891,7 @@ export class ClipGenerator {
 
                     resolve(clipPaths);
                 } catch (error) {
-                    console.error('Error processing FFmpeg scene detection:', error);
+                    logger.error('Error processing FFmpeg scene detection:', error);
                     reject(error);
                 }
             });
@@ -927,15 +931,15 @@ export class ClipGenerator {
 
         for (const videoFile of videoFiles) {
             const videoPath = path.join(directoryPath, videoFile);
-            console.log(`Processing video: ${videoPath}`);
+            logger.info(`Processing video: ${videoPath}`);
 
             try {
                 const clips = await this.generateClipsForVideo(videoPath, options);
 
                 allClips.push(...clips);
-                console.log(`Generated ${clips.length} clips from ${videoPath}`);
+                logger.info(`Generated ${clips.length} clips from ${videoPath}`);
             } catch (error) {
-                console.error(`Failed to process video ${videoPath}:`, error);
+                logger.error(`Failed to process video ${videoPath}:`, error);
             }
         }
 
@@ -950,15 +954,15 @@ export class ClipGenerator {
      * @returns Promesa con array de rutas a todos los clips generados
      */
     async processVideosLikePython(
-        inputDirectory: string,
+        inputDirectoryRaw: string,
         options: SceneDetectionOptions = {}
     ): Promise<string[]> {
-        // Valores por defecto, como en el script Python
+        const inputDirectory = path.normalize(inputDirectoryRaw);
         const minDuration = options.minDuration || 1.0;
         const maxDuration = options.maxDuration || 2.99;
 
-        console.log(`Procesando carpeta de videos: ${inputDirectory}`);
-        console.log(`Directorio de salida: ${this.outputDirectory}`);
+        logger.info(`Procesando carpeta de videos: ${inputDirectory}`);
+        logger.debug(`Directorio de salida: ${this.outputDirectory} `);
 
         // Crear el directorio de salida si no existe
         if (!fs.existsSync(this.outputDirectory)) {
@@ -975,7 +979,7 @@ export class ClipGenerator {
                         path.join(directorio, archivo),
                         path.join(directorio, nuevoNombre)
                     );
-                    console.log(`Renombrado: ${archivo} -> ${nuevoNombre}`);
+                    logger.info(`Renombrado: ${archivo} -> ${nuevoNombre} `);
                 }
             }
         };
@@ -990,7 +994,7 @@ export class ClipGenerator {
 
         // Función para procesar un video (similar a la función Python)
         const procesarVideo = async (rutaVideo: string): Promise<string[]> => {
-            console.log(`Procesando ${rutaVideo}...`);
+            logger.info(`Procesando ${rutaVideo}...`);
 
             // Detectar escenas usando FFmpeg
             const escenas = await this.detectScenesFFmpeg(rutaVideo, options);
@@ -1042,13 +1046,13 @@ export class ClipGenerator {
                         await this.generateClipWithoutAudio(rutaVideo, inicio, fin, outputPath);
                         return outputPath;
                     } catch (error) {
-                        console.error(`Error generando clip ${outputFileName}:`, error);
+                        logger.error(`Error generando clip ${outputFileName}: `, error);
                         throw error;
                     }
                 }
             );
 
-            console.log(`Procesamiento de ${rutaVideo} completado.`);
+            logger.info(`Procesamiento de ${rutaVideo} completado.`);
             return clipPaths;
         };
 
@@ -1058,7 +1062,7 @@ export class ClipGenerator {
             const clips: string[] = [];
 
             if (fs.statSync(rutaAbs).isDirectory()) {
-                console.log(`Procesando carpeta: ${rutaAbs}`);
+                logger.info(`Procesando carpeta: ${rutaAbs} `);
                 const archivos = fs.readdirSync(rutaAbs);
                 for (const archivo of archivos) {
                     const rutaArchivo = path.join(rutaAbs, archivo);
@@ -1071,7 +1075,7 @@ export class ClipGenerator {
                 const clipsPaths = await procesarVideo(rutaAbs);
                 clips.push(...clipsPaths);
             } else {
-                console.warn(`Elemento no válido: ${rutaAbs}`);
+                logger.warn(`Elemento no válido: ${rutaAbs} `);
             }
 
             return clips;
@@ -1103,13 +1107,13 @@ export class ClipGenerator {
         options?: ClipCommandOptions
     ): Promise<string> {
         if (!fs.existsSync(videoPath)) {
-            throw new Error(`Video file not found: ${videoPath}`);
+            throw new Error(`Video file not found: ${videoPath} `);
         }
 
         const clipOptions = this.resolveClipOptions(options);
         const args = this.buildClipCommandArgs(videoPath, startTime, endTime, outputPath, clipOptions);
 
-        console.log(`Generando clip de ${startTime}s a ${endTime}s`);
+        logger.debug(`Generando clip de ${startTime}s a ${endTime} s`);
 
         return this.executeClipCommand(args, outputPath);
     }
@@ -1129,12 +1133,12 @@ export class ClipGenerator {
             // Usar FFmpeg para detectar cambios de escena
             const args = [
                 '-i', videoPath,
-                '-filter:v', `select='gt(scene,${threshold})',showinfo`,
+                '-filter:v', `select = 'gt(scene,${threshold})', showinfo`,
                 '-f', 'null',
                 '-'
             ];
 
-            console.log(`Detectando escenas en ${videoPath}...`);
+            logger.info(`Detectando escenas en ${videoPath}...`);
             const ffmpegProcess = spawn(this.ffmpegPath, args);
 
             let stderrData = '';
@@ -1170,19 +1174,19 @@ export class ClipGenerator {
                             scenes.push([sceneChanges[i], sceneChanges[i + 1]]);
                         }
 
-                        console.log(`Se detectaron ${scenes.length} escenas en ${videoPath}`);
+                        logger.info(`Se detectaron ${scenes.length} escenas en ${videoPath} `);
                         resolve(scenes);
                     } catch (error) {
-                        console.error('Error procesando detección de escenas:', error);
+                        logger.error('Error procesando detección de escenas:', error);
                         reject(error);
                     }
                 } else {
-                    reject(new Error(`Error en detección de escenas, código: ${code}`));
+                    reject(new Error(`Error en detección de escenas, código: ${code}.Output: ${stderrData} `));
                 }
             });
 
             ffmpegProcess.on('error', (err) => {
-                reject(new Error(`Error iniciando FFmpeg: ${err.message}`));
+                reject(new Error(`Error iniciando FFmpeg: ${err.message} `));
             });
         });
     }

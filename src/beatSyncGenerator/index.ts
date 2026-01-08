@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
+import { logger } from '../utils';
+
 
 export class BeatSyncGenerator {
     private ffmpegPath: string;
@@ -41,7 +43,7 @@ export class BeatSyncGenerator {
             });
 
             ffprobe.stderr.on('data', (data) => {
-                console.error(`ffprobe stderr: ${data}`);
+                logger.debug(`ffprobe stderr: ${data}`);
                 // Do not reject here, as ffprobe sometimes outputs warnings to stderr
             });
 
@@ -71,7 +73,7 @@ export class BeatSyncGenerator {
         for (const relativeFolderPath of sourceClipFolderPaths) {
             const absoluteFolderPath = path.resolve(baseClipDirectory, relativeFolderPath);
             if (!fs.existsSync(absoluteFolderPath) || !fs.statSync(absoluteFolderPath).isDirectory()) {
-                console.warn(`Source folder path ${absoluteFolderPath} does not exist or is not a directory. Skipping.`);
+                logger.warn(`Source folder path ${absoluteFolderPath} does not exist or is not a directory. Skipping.`);
                 continue;
             }
 
@@ -129,7 +131,7 @@ export class BeatSyncGenerator {
 
         // Add the end of the audio segment as a final "beat" to ensure the last segment is created
         const effectiveBeatTimestamps = [...relativeBeatTimestamps];
-        if (effectiveBeatTimestamps[effectiveBeatTimestamps.length -1] < actualAudioDuration) {
+        if (effectiveBeatTimestamps[effectiveBeatTimestamps.length - 1] < actualAudioDuration) {
             effectiveBeatTimestamps.push(actualAudioDuration);
         }
 
@@ -143,11 +145,11 @@ export class BeatSyncGenerator {
         try {
             for (let i = 0; i < effectiveBeatTimestamps.length - 1; i++) {
                 const segmentStartTime = effectiveBeatTimestamps[i];
-                const segmentEndTime = effectiveBeatTimestamps[i+1];
+                const segmentEndTime = effectiveBeatTimestamps[i + 1];
                 let segmentDuration = segmentEndTime - segmentStartTime;
 
                 if (segmentDuration <= 0.01) { // Avoid zero or tiny durations
-                    console.warn(`Skipping segment ${i} due to very short duration: ${segmentDuration}`);
+                    logger.warn(`Skipping segment ${i} due to very short duration: ${segmentDuration}`);
                     continue;
                 }
                 // Ensure duration is positive and reasonable
@@ -164,7 +166,7 @@ export class BeatSyncGenerator {
                 if (sourceVideoDuration <= segmentDuration) {
                     segmentDuration = sourceVideoDuration; // Adjust segment duration to source video's length
                 } else {
-                     // Max start time to ensure the cut segment fits within the source video
+                    // Max start time to ensure the cut segment fits within the source video
                     const maxRandomSourceStartTime = sourceVideoDuration - segmentDuration;
                     sourceStartTimeForCut = Math.random() * maxRandomSourceStartTime;
                 }
@@ -190,7 +192,7 @@ export class BeatSyncGenerator {
                     tempSegmentPath
                 ];
 
-                console.log(`Executing ffmpeg: ${this.ffmpegPath} ${ffmpegArgs.join(' ')}`);
+                logger.info(`Executing ffmpeg: ${this.ffmpegPath} ${ffmpegArgs.join(' ')}`);
 
                 await new Promise<void>((resolve, reject) => {
                     const process = spawn(this.ffmpegPath, ffmpegArgs);
@@ -202,12 +204,12 @@ export class BeatSyncGenerator {
                             totalVideoDuration += usedDuration;
                             resolve();
                         } else {
-                            console.error(`FFmpeg stderr (segment ${i}): ${ffmpegStderr}`);
+                            logger.error(`FFmpeg stderr (segment ${i}): ${ffmpegStderr}`);
                             reject(new Error(`FFmpeg (segment creation) exited with code ${code}. Error: ${ffmpegStderr}`));
                         }
                     });
                     process.on('error', (err) => {
-                         console.error(`FFmpeg process error (segment ${i}): ${err.message}`);
+                        logger.error(`FFmpeg process error (segment ${i}): ${err.message}`);
                         reject(new Error(`Failed to start FFmpeg process for segment ${i}: ${err.message}`));
                     });
                 });
@@ -242,11 +244,14 @@ export class BeatSyncGenerator {
                             totalVideoDuration += fillDuration;
                             resolve();
                         } else {
-                            console.error(`FFmpeg stderr (filler): ${stderr}`);
+                            logger.error(`FFmpeg stderr (filler): ${stderr}`);
                             reject(new Error(`FFmpeg (filler) exited with code ${code}.`));
                         }
                     });
-                    p.on('error', err => reject(err));
+                    p.on('error', err => {
+                        logger.error(`FFmpeg filler process error: ${err.message}`);
+                        reject(err);
+                    });
                 });
             }
 
@@ -265,8 +270,8 @@ export class BeatSyncGenerator {
                 .join('\n');
             fs.writeFileSync(concatFilePath, concatFileContent);
 
-            console.log(`Concatenation list created at: ${concatFilePath}`);
-            console.log(`Concatenation list content:\n${concatFileContent}`);
+            logger.info(`Concatenation list created at: ${concatFilePath}`);
+            logger.debug(`Concatenation list content:\n${concatFileContent}`);
 
 
             const concatFfmpegArgs = [
@@ -282,7 +287,7 @@ export class BeatSyncGenerator {
                 tempConcatVideoPath
             ];
 
-            console.log(`Executing ffmpeg concat: ${this.ffmpegPath} ${concatFfmpegArgs.join(' ')}`);
+            logger.info(`Executing ffmpeg concat: ${this.ffmpegPath} ${concatFfmpegArgs.join(' ')}`);
 
             await new Promise<void>((resolve, reject) => {
                 const process = spawn(this.ffmpegPath, concatFfmpegArgs, { cwd: this.tempSegmentDirectory });
@@ -292,12 +297,12 @@ export class BeatSyncGenerator {
                     if (code === 0) {
                         resolve();
                     } else {
-                        console.error(`FFmpeg concat stderr: ${ffmpegConcatStderr}`);
+                        logger.error(`FFmpeg concat stderr: ${ffmpegConcatStderr}`);
                         reject(new Error(`FFmpeg (concatenation) exited with code ${code}. Error: ${ffmpegConcatStderr}`));
                     }
                 });
                 process.on('error', (err) => {
-                    console.error(`FFmpeg concat process error: ${err.message}`);
+                    logger.error(`FFmpeg concat process error: ${err.message}`);
                     reject(new Error(`Failed to start FFmpeg concat process: ${err.message}`));
                 });
             });
@@ -319,11 +324,14 @@ export class BeatSyncGenerator {
                     if (code === 0) {
                         resolve();
                     } else {
-                        console.error(`FFmpeg audio cut stderr: ${stderr}`);
+                        logger.error(`FFmpeg audio cut stderr: ${stderr}`);
                         reject(new Error(`FFmpeg (audio cut) exited with code ${code}.`));
                     }
                 });
-                p.on('error', err => reject(err));
+                p.on('error', err => {
+                    logger.error(`FFmpeg audio cut process error: ${err.message}`);
+                    reject(err);
+                });
             });
 
             const mergeArgs = [
@@ -349,11 +357,14 @@ export class BeatSyncGenerator {
                     if (code === 0) {
                         resolve();
                     } else {
-                        console.error(`FFmpeg merge stderr: ${stderr}`);
+                        logger.error(`FFmpeg merge stderr: ${stderr}`);
                         reject(new Error(`FFmpeg (merge) exited with code ${code}.`));
                     }
                 });
-                p.on('error', err => reject(err));
+                p.on('error', err => {
+                    logger.error(`FFmpeg merge process error: ${err.message}`);
+                    reject(err);
+                });
             });
 
             return finalOutputVideoPath;
@@ -365,7 +376,7 @@ export class BeatSyncGenerator {
                     try {
                         fs.unlinkSync(tempPath);
                     } catch (e: any) {
-                        console.warn(`Failed to delete temporary segment ${tempPath}: ${e.message}`);
+                        logger.warn(`Failed to delete temporary segment ${tempPath}: ${e.message}`);
                     }
                 }
             }
@@ -373,14 +384,14 @@ export class BeatSyncGenerator {
                 try {
                     fs.unlinkSync(concatFilePath);
                 } catch (e: any) {
-                     console.warn(`Failed to delete concat list ${concatFilePath}: ${e.message}`);
+                    logger.warn(`Failed to delete concat list ${concatFilePath}: ${e.message}`);
                 }
             }
             if (fs.existsSync(tempConcatVideoPath)) {
-                try { fs.unlinkSync(tempConcatVideoPath); } catch {}
+                try { fs.unlinkSync(tempConcatVideoPath); } catch { }
             }
             if (fs.existsSync(audioSegmentPath)) {
-                try { fs.unlinkSync(audioSegmentPath); } catch {}
+                try { fs.unlinkSync(audioSegmentPath); } catch { }
             }
             // Optionally, try to remove the temp_beat_segments directory if empty
             try {
@@ -388,7 +399,7 @@ export class BeatSyncGenerator {
                     fs.rmdirSync(this.tempSegmentDirectory);
                 }
             } catch (e: any) {
-                console.warn(`Failed to remove temporary segment directory ${this.tempSegmentDirectory}: ${e.message}`);
+                logger.warn(`Failed to remove temporary segment directory ${this.tempSegmentDirectory}: ${e.message}`);
             }
         }
     }

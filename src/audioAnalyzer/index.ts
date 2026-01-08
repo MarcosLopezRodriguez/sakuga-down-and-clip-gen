@@ -1,6 +1,8 @@
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { logger } from '../utils';
+
 
 export interface AudioAnalysisResult {
   beats: number[];
@@ -18,7 +20,7 @@ export class AudioAnalyzer {
     try {
       return await this.analyzeBeatsWithAubio(audioFilePath);
     } catch (aubioError: any) {
-      console.warn('Aubio not available, falling back to FFmpeg-based analysis:', aubioError.message);
+      logger.warn('Aubio not available, falling back to FFmpeg-based analysis:', aubioError.message);
       return await this.analyzeBeatsWithFFmpeg(audioFilePath);
     }
   }
@@ -89,7 +91,7 @@ export class AudioAnalyzer {
           resolve({ beats });
         } catch (parseError: any) {
           // If parsing fails, generate a simple beat pattern
-          console.warn('Could not parse FFmpeg output, generating simple beat pattern');
+          logger.warn('Could not parse FFmpeg output, generating simple beat pattern');
           const simpleBeatPattern = this.generateSimpleBeatPattern();
           resolve({ beats: simpleBeatPattern });
         }
